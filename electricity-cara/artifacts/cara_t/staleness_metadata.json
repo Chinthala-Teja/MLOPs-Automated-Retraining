@@ -1,0 +1,23 @@
+{
+    "model": "model_v1",
+    "training_batches": [
+        0,
+        69
+    ],
+    "validation_batches": [
+        70,
+        84
+    ],
+    "reference_data_size": 2000,
+    "reference_query_size": 500,
+    "gamma_sample_size": 1000,
+    "gamma": 0.13389850352977284,
+    "median_squared_distance": 7.468343361863235,
+    "reference_absolute_cost": 0.09678242911256316,
+    "kernel": "exp(-gamma * squared_euclidean_distance)",
+    "loss": "0-1 classification loss at probability threshold 0.5",
+    "relative_staleness_definition": "current batch absolute cost minus initial training reference absolute cost",
+    "normalization": "mean over queries and labeled data points",
+    "seed": 42,
+    "note": "Batch-specific adaptation of similarity-weighted loss. Reference and batch costs use their respective labeled data; the reference uses reproducible training samples."
+}

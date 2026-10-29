@@ -1,0 +1,29 @@
+{
+    "dataset": "Electricity",
+    "records": 45312,
+    "number_of_batches": 100,
+    "train_end_exclusive": 31718,
+    "validation_end_exclusive": 38515,
+    "train_rows": [
+        0,
+        31718
+    ],
+    "validation_rows": [
+        31718,
+        38515
+    ],
+    "test_rows": [
+        38515,
+        45312
+    ],
+    "features": [
+        "period",
+        "nswprice",
+        "nswdemand",
+        "vicprice",
+        "vicdemand",
+        "transfer"
+    ],
+    "target": "class",
+    "row_order_preserved": true
+}

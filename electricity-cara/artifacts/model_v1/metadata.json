@@ -1,0 +1,31 @@
+{
+  "model_version": "v1",
+  "algorithm": "Keras binary classifier",
+  "features": [
+    "period",
+    "nswprice",
+    "nswdemand",
+    "vicprice",
+    "vicdemand",
+    "transfer"
+  ],
+  "target": "class",
+  "training_batches": [
+    0,
+    69
+  ],
+  "validation_batches": [
+    70,
+    84
+  ],
+  "training_records": 31718,
+  "validation_records": 6797,
+  "random_seed": 42,
+  "metrics": {
+    "accuracy": 0.6891275562748271,
+    "precision": 0.6447922937989163,
+    "recall": 0.412875867386276,
+    "f1": 0.5034077555816686,
+    "roc_auc": 0.7251805122859888
+  }
+}

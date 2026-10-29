@@ -1,0 +1,14 @@
+{
+    "model_version": "V1",
+    "model_type": "Keras MLP",
+    "seed": 42,
+    "train_records": 31718,
+    "validation_records": 6797,
+    "test_records": 6797,
+    "epochs_completed": 6,
+    "accuracy": 0.7270854788877446,
+    "precision": 0.6564114080395239,
+    "recall": 0.8999384236453202,
+    "f1": 0.7591221919231269,
+    "roc_auc": 0.8447423092885389
+}
