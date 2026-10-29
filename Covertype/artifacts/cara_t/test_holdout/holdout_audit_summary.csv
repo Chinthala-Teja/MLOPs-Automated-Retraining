@@ -1,0 +1,5 @@
+strategy,row_count,distinct_batch_count,batch_coverage_ok,decision_checks_passed,decision_checks_total,decision_rule_ok,model_version_checks_passed,model_version_checks_total,model_version_progression_ok,recorded_proxy_cost,recalculated_proxy_cost,proxy_cost_reconciles,summary_reconciles
+Never retrain,15,15,True,15,15,True,15,15,True,2.9384240697439314,2.938424069743931,True,True
+Always retrain,15,15,True,15,15,True,15,15,True,2.4627918255313346,2.462791825531335,True,True
+Periodic (every 3 batches),15,15,True,15,15,True,15,15,True,2.805924242366516,2.8059242423665154,True,True
+CARA-T-inspired,15,15,True,15,15,True,15,15,True,2.1886890730869273,2.1886890730869277,True,True

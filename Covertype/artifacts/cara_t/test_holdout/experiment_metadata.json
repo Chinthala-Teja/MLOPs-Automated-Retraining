@@ -1,0 +1,22 @@
+{
+  "evaluation": "sequential prequential holdout replay",
+  "holdout_batches": [
+    85,
+    99
+  ],
+  "prediction_order": "Predict and score each batch before any update; updates affect only later batches.",
+  "final_batch": "The policy decision is logged and a selected update is trained after scoring the final batch, matching the Electricity holdout replay; the final update has no effect on a later holdout prediction.",
+  "retraining_data": "A replacement is trained from fresh weights using only the current batch, matching the Electricity experiment.",
+  "kappa": 0.164186121702089,
+  "threshold": 0.02660627773400442,
+  "rbf_gamma": 0.24278975130383443,
+  "proxy_cost_definition": "RETRAIN pays kappa; KEEP pays current batch absolute proxy cost.",
+  "retraining_seconds_are_informational": true,
+  "stream_order_is_verified_chronology": false,
+  "limitations": [
+    "LIBSVM input has no timestamps; preserved row order is not verified time.",
+    "The binary dataset contains only original classes 1 and 2.",
+    "The proxy cost and kappa are not real financial or compute costs.",
+    "The test phase is a prequential replay: each batch is predicted before its labels are used for a later update."
+  ]
+}

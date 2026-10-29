@@ -1,0 +1,18 @@
+{
+  "method": "RBF similarity-weighted 0-1 classification-error proxy",
+  "gamma": 0.24278975130383443,
+  "reference_absolute_cost": 0.09274896402350459,
+  "validation_batches": [
+    70,
+    84
+  ],
+  "reference_data_sample_size": 2000,
+  "reference_query_sample_size": 500,
+  "batch_data_sample_limit": 2000,
+  "batch_query_sample_limit": 500,
+  "relative_staleness_definition": "batch_absolute_cost minus the original Model V1 training-reference cost",
+  "rbf_kernel": "exp(-gamma * squared_euclidean_distance)",
+  "loss": "0-1 loss at probability threshold 0.5",
+  "cost_is_real_operational_cost": false,
+  "stream_order_is_verified_chronology": false
+}

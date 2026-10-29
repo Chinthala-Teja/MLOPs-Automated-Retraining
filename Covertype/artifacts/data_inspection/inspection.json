@@ -1,0 +1,24 @@
+{
+  "source_file": "C:\\HOME\\B230267CS-7\\Project\\Implementation\\covtype.libsvm.binary.scale.bz2",
+  "records": 581012,
+  "feature_count": 54,
+  "expected_feature_count": 54,
+  "labels_original": {
+    "1.0": 297711,
+    "2.0": 283301
+  },
+  "labels_binary": {
+    "0 (original class 1)": 297711,
+    "1 (original class 2)": 283301
+  },
+  "sparse_nonzero_values": 6940438,
+  "sparse_density": 0.22121166108381518,
+  "feature_value_min": 0.000500250025652349,
+  "feature_value_max": 1.0,
+  "row_order_is_verified_chronology": false,
+  "notes": [
+    "This is the binary LIBSVM CoverType variant, with original labels 1 and 2.",
+    "The 54 supplied feature columns are already scaled; no additional scaler is fitted.",
+    "The file has no timestamp field; row order is preserved only as a reproducible pseudo-stream."
+  ]
+}

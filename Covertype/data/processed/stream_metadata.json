@@ -1,0 +1,105 @@
+{
+  "dataset": "Covertype binary LIBSVM scaled",
+  "source_file": "covtype.libsvm.binary.scale.bz2",
+  "records": 581012,
+  "features": [
+    "elevation",
+    "aspect",
+    "slope",
+    "horizontal_distance_to_hydrology",
+    "vertical_distance_to_hydrology",
+    "horizontal_distance_to_roadways",
+    "hillshade_9am",
+    "hillshade_noon",
+    "hillshade_3pm",
+    "horizontal_distance_to_fire_points",
+    "wilderness_area_1",
+    "wilderness_area_2",
+    "wilderness_area_3",
+    "wilderness_area_4",
+    "soil_type_1",
+    "soil_type_2",
+    "soil_type_3",
+    "soil_type_4",
+    "soil_type_5",
+    "soil_type_6",
+    "soil_type_7",
+    "soil_type_8",
+    "soil_type_9",
+    "soil_type_10",
+    "soil_type_11",
+    "soil_type_12",
+    "soil_type_13",
+    "soil_type_14",
+    "soil_type_15",
+    "soil_type_16",
+    "soil_type_17",
+    "soil_type_18",
+    "soil_type_19",
+    "soil_type_20",
+    "soil_type_21",
+    "soil_type_22",
+    "soil_type_23",
+    "soil_type_24",
+    "soil_type_25",
+    "soil_type_26",
+    "soil_type_27",
+    "soil_type_28",
+    "soil_type_29",
+    "soil_type_30",
+    "soil_type_31",
+    "soil_type_32",
+    "soil_type_33",
+    "soil_type_34",
+    "soil_type_35",
+    "soil_type_36",
+    "soil_type_37",
+    "soil_type_38",
+    "soil_type_39",
+    "soil_type_40"
+  ],
+  "feature_count": 54,
+  "target": "binary label: original class 1 -> 0; original class 2 -> 1",
+  "feature_groups": {
+    "1-10": "terrain and distance measurements",
+    "11-14": "wilderness-area indicators",
+    "15-54": "soil-type indicators"
+  },
+  "original_class_counts": {
+    "1": 297711,
+    "2": 283301
+  },
+  "number_of_batches": 100,
+  "train_end_exclusive": 406708,
+  "validation_end_exclusive": 493860,
+  "train_rows": [
+    0,
+    406708
+  ],
+  "validation_rows": [
+    406708,
+    493860
+  ],
+  "test_rows": [
+    493860,
+    581012
+  ],
+  "split_batch_ids": {
+    "train": [
+      0,
+      69
+    ],
+    "validation": [
+      70,
+      84
+    ],
+    "test": [
+      85,
+      99
+    ]
+  },
+  "row_order_preserved": true,
+  "row_order_is_verified_chronology": false,
+  "scaling": "Input features were already scaled in the supplied LIBSVM file.",
+  "storage": "CSR sparse matrix in X.npz and integer target array in y.npy."
+}

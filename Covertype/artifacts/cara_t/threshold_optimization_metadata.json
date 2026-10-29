@@ -1,0 +1,103 @@
+{
+  "method": "sequential validation replay with dynamic model updates and kappa sensitivity",
+  "candidate_thresholds": [
+    "-inf",
+    0.00447947917139381,
+    0.02660627773400442,
+    0.05659878132400942,
+    0.0714371576785844,
+    0.08857125141856828,
+    0.09589059076754283,
+    0.15147354926739065,
+    "inf"
+  ],
+  "candidate_threshold_source": "Quantiles of standalone Model V1 validation relative staleness plus +/- infinity.",
+  "validation_batches": [
+    70,
+    84
+  ],
+  "test_batches_reserved": [
+    85,
+    99
+  ],
+  "kappa_reference": "Median positive standalone Model V1 validation batch absolute proxy cost.",
+  "kappa_reference_value": 0.164186121702089,
+  "kappa_multipliers": [
+    0.25,
+    0.5,
+    1.0,
+    2.0,
+    4.0
+  ],
+  "default_kappa_multiplier": 1.0,
+  "selected_default_kappa": 0.164186121702089,
+  "selected_default_threshold": 0.02660627773400442,
+  "selected_default_retrain_count": 7,
+  "reference_reset": "After RETRAIN, estimate replacement-model reference cost on a seeded sample of its current training batch.",
+  "retraining": "Fresh weights, 15 epochs, batch size 1024, current validation batch only.",
+  "decision_timing": "Evaluate batch first; a trained replacement serves subsequent batches.",
+  "cost_definition": "KEEP pays current batch absolute proxy cost; RETRAIN pays kappa.",
+  "limitations": [
+    "Experimental CARA-T-inspired adaptation, not exact paper reproduction.",
+    "Validation data is used for threshold selection and is not an unbiased test.",
+    "The kappa values are proxy sensitivity settings, not measured operating cost.",
+    "The source file order is not verified chronology."
+  ],
+  "best_policy_per_kappa": [
+    {
+      "kappa_multiplier": 0.25,
+      "kappa": 0.04104653042552225,
+      "selected_threshold": "-inf",
+      "total_cost": 0.6156979563828336,
+      "mean_cost": 0.04104653042552224,
+      "keep_count": 0,
+      "retrain_count": 15,
+      "mean_error": 0.25539309436778507,
+      "retraining_seconds": 19.229982299995754
+    },
+    {
+      "kappa_multiplier": 0.5,
+      "kappa": 0.0820930608510445,
+      "selected_threshold": "-inf",
+      "total_cost": 1.2313959127656673,
+      "mean_cost": 0.08209306085104448,
+      "keep_count": 0,
+      "retrain_count": 15,
+      "mean_error": 0.25539309436778507,
+      "retraining_seconds": 19.92890599999737
+    },
+    {
+      "kappa_multiplier": 1.0,
+      "kappa": 0.164186121702089,
+      "selected_threshold": 0.02660627773400442,
+      "total_cost": 2.0130318161546956,
+      "mean_cost": 0.1342021210769797,
+      "keep_count": 8,
+      "retrain_count": 7,
+      "mean_error": 0.2646988889747845,
+      "retraining_seconds": 9.014808699997957
+    },
+    {
+      "kappa_multiplier": 2.0,
+      "kappa": 0.328372243404178,
+      "selected_threshold": "inf",
+      "total_cost": 2.465602380475127,
+      "mean_cost": 0.16437349203167514,
+      "keep_count": 15,
+      "retrain_count": 0,
+      "mean_error": 0.30390476131237837,
+      "retraining_seconds": 0.0
+    },
+    {
+      "kappa_multiplier": 4.0,
+      "kappa": 0.656744486808356,
+      "selected_threshold": "inf",
+      "total_cost": 2.465602380475127,
+      "mean_cost": 0.16437349203167514,
+      "keep_count": 15,
+      "retrain_count": 0,
+      "mean_error": 0.30390476131237837,
+      "retraining_seconds": 0.0
+    }
+  ]
+}
