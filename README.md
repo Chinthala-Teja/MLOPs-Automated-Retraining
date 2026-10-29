@@ -1,114 +1,106 @@
-# Electricity MLOps: Cost-Aware Model Retraining
+# Electricity MLOps — Cost-Aware Retraining
 
-## 1. Project Overview
+## Overview
 
-This project implements an end-to-end MLOps workflow for electricity price-movement classification. It trains a baseline model, monitors performance across chronological data batches, estimates model staleness, and evaluates retraining policies using a cost-aware decision mechanism inspired by CARA-T.
+This project implements an MLOps workflow for electricity price-movement classification. It combines chronological dataset batching, neural-network training, batch monitoring, RBF-based staleness estimation, and a threshold-based retraining policy inspired by CARA-T.
 
-The main research question is:
+The research question is: **When should an ML model be retrained instead of continuing to use the current model?**
 
-**When should an ML model be retrained, and when should the existing model continue serving predictions?**
-
-The system compares threshold-based retraining against never-retrain, always-retrain, and periodic-retraining baselines.
-
-## 2. Architecture
-
-Raw Electricity Dataset  
-→ Data Preparation and Chronological Batching  
-→ Model Training and Preprocessing  
-→ Model V1 Artifacts  
-→ Batch-Level Monitoring  
-→ RBF-Based Staleness Estimation  
-→ Retraining Decision  
-→ KEEP or RETRAIN  
-→ Updated Model Evaluation  
-→ Cost and Performance Comparison
-
-## 3. Dataset and Splits
+## Dataset
 
 The processed dataset contains 45,312 records divided into 100 chronological batches.
 
-| Split | Batches | Records |
+| Split | Batch IDs | Records |
 |---|---|---:|
 | Training | 0–69 | 31,718 |
 | Validation | 70–84 | 6,797 |
 | Holdout | 85–99 | 6,797 |
 
-The holdout batches are used for final policy comparison. Earlier exploratory analysis included inspection of holdout data, so the holdout should not be described as completely untouched throughout the entire project history.
+The holdout data was inspected during earlier exploratory analysis, so it should not be described as completely untouched throughout the project.
 
-## 4. Baseline Model
+## Architecture
 
-The baseline is a neural-network binary classifier using six standardized input features.
+Raw data → preprocessing and chronological batching → Model V1 → batch monitoring → staleness estimation → KEEP/RETRAIN decision → sequential replay → baseline comparison and audit.
 
-Architecture:
-- Dense layer with 32 ReLU units
-- Dropout layer with rate 0.2
-- Dense layer with 16 ReLU units
-- Sigmoid output layer
+## Model
 
-The scaler is fitted on training data. Training uses Adam, binary cross-entropy, and early stopping.
+The baseline is a neural-network binary classifier using six standardized features. Its artifacts are stored under `artifacts/model_v1/`.
 
-## 5. Monitoring and Staleness
+- `model.keras`: trained model
+- `scaler.joblib`: fitted feature scaler
+- `metadata.json`: training configuration and validation metrics
 
-The monitoring pipeline evaluates model performance across chronological batches and records classification metrics.
+The scaler is fitted on the training split.
 
-The staleness component uses an RBF similarity kernel and prediction errors to estimate the cost associated with using a model on a batch. Relative staleness compares the current batch's estimated cost against a reference cost.
+## Retraining policies
 
-A threshold-based decision determines whether the policy keeps the active model or retrains it.
-
-## 6. Retraining Policies
-
-The evaluation compares:
+The experiments compare:
 1. Never retrain
 2. Always retrain
-3. Periodic retraining, every three batches
-4. CARA-T-inspired threshold-based retraining
+3. Periodic retraining
+4. CARA-T-inspired threshold retraining
 
-The project uses a normalized proxy-cost objective: KEEP incurs the estimated batch cost, while RETRAIN incurs the configured retraining cost, κ.
+The project-specific proxy cost assigns κ to a RETRAIN decision and the estimated absolute batch cost to a KEEP decision. This is an adaptation inspired by CARA-T, not an exact reproduction of the paper's objective.
 
-This is a project-specific adaptation inspired by CARA-T, not an exact reproduction of the paper's optimization procedure.
+## Main scripts
 
-## 7. Holdout Results
+Run commands from the project root.
 
-| Policy | Retrains | Proxy Cost | Accuracy | F1 |
+| Script | Purpose |
+|---|---|
+| `src/03_prepare_batches.py` | Prepare chronological batches |
+| `train_baseline.py` | Train the canonical Model V1 and save its artifacts |
+| `evaluate_batches.py` | Generate batch-level monitoring metrics |
+| `cara_staleness.py` | Estimate and visualize staleness |
+| `optimize_cara_threshold.py` | Run the existing threshold optimization experiment |
+| `cara_sequential_replay.py` | Run sequential replay and cost-sensitivity experiments |
+| `compare_baselines.py` | Compare retraining strategies |
+| `evaluate_test_holdout.py` | Run validation threshold selection, holdout comparison, and integrated audit |
+| `audit_test_holdout.py` | Re-audit saved holdout results |
+
+Run only the scripts needed for the experiment you want to reproduce. Do not rerun training after final evaluation unless you intend to regenerate the model and rerun dependent experiments.
+
+## Holdout outputs
+
+The principal results are saved in `artifacts/cara_t/test_holdout/`:
+
+- `test_batch_results.csv`
+- `test_strategy_summary.csv`
+- `experiment_metadata.json`
+- `holdout_audit.csv`
+- `holdout_audit_summary.csv`
+- `holdout_run_log.txt`
+- `plots/`
+
+## Recorded holdout results
+
+| Policy | Retrains | Proxy cost | Accuracy | F1 |
 |---|---:|---:|---:|---:|
 | Never retrain | 0 | 1.2928 | 78.96% | 0.7860 |
 | Always retrain | 15 | 1.2000 | 81.07% | 0.7900 |
 | Periodic | 5 | 1.1300 | 80.42% | 0.7644 |
 | CARA-T-inspired | 14 | 1.1657 | 81.17% | 0.7914 |
 
-These results are from the recorded holdout run. The proxy cost is an experimental objective, not a monetary-cost measurement.
+These values correspond to the recorded experiment and may change if the model, environment, or random seed changes. The proxy cost is not a measured monetary cost.
 
-## 8. Key Findings
+## Limitations
 
-- Periodic retraining achieved the lowest proxy cost in the recorded holdout experiment.
-- The CARA-T-inspired policy achieved the highest mean accuracy and F1 in that run.
-- The threshold policy retrained on 14 of 15 holdout batches, so it reduced retraining only slightly compared with always retraining.
-- Lower proxy cost does not necessarily imply higher predictive performance.
-- The current results motivate further work on cost calibration, robust threshold selection, and retraining on accumulated data.
+- Retraining costs are assumed normalized values.
+- The CARA-T-inspired policy is not an exact reproduction of the paper.
+- Retraining uses the current batch and retains the original scaler.
+- The workflow simulates a streaming process using chronological batches; live automated deployment has not been established by these experiments.
+- Earlier exploratory inspection of holdout data limits claims of a fully untouched holdout.
 
-## 9. Artifacts
+## Environment
 
-Important output locations:
+Install dependencies with:
 
-- `artifacts/model_v1/` — baseline model, scaler, and metadata
-- `artifacts/monitoring/` — batch-level monitoring metrics
-- `artifacts/cara_t/` — staleness, threshold, and sequential replay experiments
-- `artifacts/cara_t/test_holdout/` — holdout results, audit CSVs, run log, and plots
+`python -m pip install -r requirements.txt`
 
-## 10. Reproducibility
+Run the holdout evaluation with:
 
-Run scripts from the project root using the Python environment configured for the project. Verify each script's input and output paths before running it.
+`python -u evaluate_test_holdout.py`
 
-The principal experiment outputs should be preserved alongside the configuration and metadata used to generate them.
+Run the saved-results audit with:
 
-## 11. Limitations
-
-- Retraining costs are normalized assumptions rather than measured operational costs.
-- The threshold-based method is CARA-T-inspired, not an exact paper reproduction.
-- Retraining currently uses the current batch and retains the original scaler.
-- Batch-based evaluation is a simulation of a streaming MLOps workflow.
-- The reported results apply to this dataset, model, split, and experiment configuration; broader generalization has not been established.
-
-## 12. Future Work
-
-Potential improvements include measuring actual training and serving costs, evaluating retraining on accumulated data, tracking data and model versions more comprehensively, and testing the workflow on a live stream.
+`python audit_test_holdout.py`
