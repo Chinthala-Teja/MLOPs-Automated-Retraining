@@ -1,5 +1,10 @@
 # CoverType cost-aware retraining experiment
 
+The notebook companion [Covertype_CARA_T.ipynb](Covertype_CARA_T.ipynb)
+follows the Airline notebook's research/evaluation flow and cites the supplied
+CARA paper. It analyzes saved artifacts by default; its final cell can
+optionally rerun the full canonical pipeline.
+
 This project ports the batch-monitoring and CARA-T-inspired retraining workflow used in `Electricity\electricity-cara` to the supplied binary CoverType LIBSVM data. It is an experiment/replay, not a live production deployment and not an exact reproduction of the CARA-T research paper.
 
 ## What the supplied data actually is

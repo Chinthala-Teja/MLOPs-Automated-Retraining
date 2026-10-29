@@ -19,13 +19,21 @@ the implementations are not exact reproductions of the full published method.
 | Path | Purpose |
 |---|---|
 | `Electricity\electricity-cara\` | Electricity training, monitoring, sequential replay, policy comparison, and audit scripts |
+| `Electricity\electricity-cara\Electricity_CARA_T.ipynb` | Notebook report for the Electricity experiment, following the Airline research flow |
 | `AirLine.ipynb` | Executed Airlines research notebook; experiment results and plots are embedded in the notebook |
 | `Covertype\` | CoverType pipeline, scripts, project documentation, and saved results |
+| `Covertype\Covertype_CARA_T.ipynb` | Notebook report for the CoverType experiment, following the Airline research flow |
 | `Covertype\artifacts\` | CoverType baseline, validation, holdout, monitoring, and audit outputs |
 | `Electricity\electricity-cara\artifacts\` | Electricity models, monitoring outputs, policy results, and holdout audit |
 
 More detailed project-specific instructions are in the [Electricity README](Electricity/README.md)
 and [CoverType README](Covertype/README.md).
+
+The [Electricity notebook](Electricity/electricity-cara/Electricity_CARA_T.ipynb)
+and [CoverType notebook](Covertype/Covertype_CARA_T.ipynb) read saved artifacts
+by default and provide an explicit switch for rerunning their canonical
+pipelines. Both cite the supplied CARA paper and distinguish its method from
+the project's CARA-T-inspired adaptations.
 
 ## Shared experimental workflow
 
