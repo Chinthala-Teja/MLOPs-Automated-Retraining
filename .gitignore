@@ -4,6 +4,5 @@ __pycache__/
 *.py[cod]
 
 # Local notebooks and source datasets
-/AirLine Uday.ipynb
 /Covertype.zip
 /covtype.libsvm.binary.scale.bz2
