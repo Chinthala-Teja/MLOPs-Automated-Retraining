@@ -1,0 +1,24 @@
+{
+    "method": "sequential validation replay",
+    "validation_batches": [
+        70,
+        84
+    ],
+    "kappa": 0.04,
+    "gamma": 0.13658201649045754,
+    "initial_reference_cost": 0.09552819035163643,
+    "selected_threshold": "-inf",
+    "best_total_proxy_cost": 0.6,
+    "best_mean_proxy_cost": 0.04,
+    "best_keep_count": 0,
+    "best_retrain_count": 15,
+    "best_mean_error": 0.31128583144512184,
+    "cost_definition": "KEEP pays current batch absolute cost; RETRAIN pays kappa.",
+    "limitations": [
+        "Experimental adaptation, not exact reproduction of CARA-T.",
+        "Retraining uses only the current batch.",
+        "The fixed scaler is reused for replacement models.",
+        "Kappa is an assumed cost in normalized units.",
+        "Validation replay is used for policy selection, not as a final unbiased performance estimate."
+    ]
+}

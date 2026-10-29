@@ -1,0 +1,90 @@
+{
+    "method": "sequential validation replay with kappa sensitivity",
+    "train_batches": [
+        0,
+        69
+    ],
+    "validation_batches": [
+        70,
+        84
+    ],
+    "test_batches_reserved": [
+        85,
+        99
+    ],
+    "kappa_values": [
+        0.02,
+        0.04,
+        0.06,
+        0.08,
+        0.12
+    ],
+    "candidate_thresholds": [
+        "-inf",
+        -0.04230945409179753,
+        -0.01685984590411872,
+        -0.005241611017730131,
+        0.01339100038481307,
+        0.040430739912642136,
+        0.07931063650491917,
+        0.1448355694698684,
+        "inf"
+    ],
+    "gamma": 0.13658201649045754,
+    "initial_reference_cost": 0.09552819035163643,
+    "cost_definition": "KEEP pays current batch absolute cost; RETRAIN pays kappa.",
+    "limitations": [
+        "Experimental CARA-T-style adaptation, not exact paper reproduction.",
+        "Threshold candidates come from standalone V1 validation staleness.",
+        "Kappa values are assumed normalized costs, not measured monetary costs.",
+        "Retraining uses only the current batch and reuses the fixed scaler.",
+        "Validation is used for policy selection, not final unbiased testing."
+    ],
+    "best_policy_per_kappa": [
+        {
+            "kappa": 0.02,
+            "selected_threshold": "-inf",
+            "total_cost": 0.3,
+            "mean_cost": 0.02,
+            "keep_count": 0,
+            "retrain_count": 15,
+            "mean_error": 0.31128583144512184
+        },
+        {
+            "kappa": 0.04,
+            "selected_threshold": "-inf",
+            "total_cost": 0.6,
+            "mean_cost": 0.04,
+            "keep_count": 0,
+            "retrain_count": 15,
+            "mean_error": 0.31128583144512184
+        },
+        {
+            "kappa": 0.06,
+            "selected_threshold": "-inf",
+            "total_cost": 0.9000000000000004,
+            "mean_cost": 0.060000000000000026,
+            "keep_count": 0,
+            "retrain_count": 15,
+            "mean_error": 0.31128583144512184
+        },
+        {
+            "kappa": 0.08,
+            "selected_threshold": -0.01685984590411872,
+            "total_cost": 1.1823327990192893,
+            "mean_cost": 0.07882218660128595,
+            "keep_count": 2,
+            "retrain_count": 13,
+            "mean_error": 0.32747420524938975
+        },
+        {
+            "kappa": 0.12,
+            "selected_threshold": 0.040430739912642136,
+            "total_cost": 1.5681999994123514,
+            "mean_cost": 0.1045466666274901,
+            "keep_count": 9,
+            "retrain_count": 6,
+            "mean_error": 0.3382267993114916
+        }
+    ]
+}

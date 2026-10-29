@@ -1,0 +1,28 @@
+{
+  "validation_batches": [
+    70,
+    84
+  ],
+  "training_batches": [
+    0,
+    69
+  ],
+  "reserved_test_batches": [
+    85,
+    99
+  ],
+  "kappa": 0.08,
+  "cara_threshold": "-0.01685984590411872",
+  "periodic_interval": 3,
+  "cost_definition": "KEEP pays current batch absolute proxy cost; RETRAIN pays kappa.",
+  "limitations": [
+    "CARA-T-inspired threshold policy, not exact reproduction of the paper optimizer.",
+    "Threshold was selected using validation results, so this comparison is not an unbiased final test.",
+    "Kappa is an assumed normalized proxy cost, not a measured monetary cost.",
+    "Retraining uses only the current batch and reuses the fixed scaler.",
+    "Metrics are calculated before the decision; a replacement model serves the next batch.",
+    "The current implementation charges retraining cost for the final validation batch too, matching the prior replay convention, although that replacement is not used within this validation window."
+  ],
+  "gamma": 0.13658201649045754,
+  "initial_reference_cost": 0.09552819035163643
+}

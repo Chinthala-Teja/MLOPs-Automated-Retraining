@@ -1,0 +1,174 @@
+===========================================================================
+ELECTRICITY MLOPS: HOLDOUT EVALUATION AND AUDIT
+===========================================================================
+Training records: 31718
+Holdout batches: [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]
+Holdout records: 6797
+RBF gamma: 0.13658202
+Initial threshold before validation selection: -0.01685985
+Kappa: 0.080
+Log file: artifacts\cara_t\test_holdout\holdout_run_log.txt
+
+===========================================================================
+VALIDATION-ONLY THRESHOLD SENSITIVITY
+===========================================================================
+Validation batches: 70-84
+Candidate thresholds: 13
+Objective: existing normalized proxy cost
+
+Candidate results ranked by proxy cost:
+threshold_label  total_proxy_cost  retrain_count  keep_count  mean_error_rate  selected
+    -0.01783014           1.18233             13           2          0.32747      True
+    -0.01523338           1.18233             13           2          0.32747     False
+    -0.00934083           1.18233             13           2          0.32747     False
+           -inf           1.20000             15           0          0.31129     False
+    -0.04175335           1.20000             15           0          0.31129     False
+     0.02542829           1.23654              8           7          0.32660     False
+     0.00567834           1.24674              9           6          0.32793     False
+     0.01313136           1.24674              9           6          0.32793     False
+           +inf           1.86176              0          15          0.31085     False
+     0.09783246           1.88324              2          13          0.36972     False
+     0.05428662           2.03813              4          11          0.43183     False
+     0.06687243           2.13501              3          12          0.43550     False
+     0.14346489           2.32363              1          14          0.42535     False
+
+Selected validation threshold:
+  -0.01783014210728569
+  Validation proxy cost: 1.182333
+  Retraining decisions: 13
+  Mean validation error: 0.327474
+
+Saved validation sensitivity CSV:
+  artifacts\cara_t\test_holdout\validation_threshold_sensitivity.csv
+Saved validation sensitivity PNG:
+  artifacts\cara_t\test_holdout\plots\validation_threshold_sensitivity.png
+
+===========================================================================
+Running: Never retrain
+===========================================================================
+Never retrain        | batch=85 | error=0.262 | staleness=0.0121 | KEEP
+Never retrain        | batch=86 | error=0.335 | staleness=0.0365 | KEEP
+Never retrain        | batch=87 | error=0.221 | staleness=-0.0043 | KEEP
+Never retrain        | batch=88 | error=0.199 | staleness=-0.0147 | KEEP
+Never retrain        | batch=89 | error=0.214 | staleness=0.0083 | KEEP
+Never retrain        | batch=90 | error=0.121 | staleness=-0.0399 | KEEP
+Never retrain        | batch=91 | error=0.190 | staleness=-0.0203 | KEEP
+Never retrain        | batch=92 | error=0.119 | staleness=-0.0516 | KEEP
+Never retrain        | batch=93 | error=0.201 | staleness=-0.0337 | KEEP
+Never retrain        | batch=94 | error=0.174 | staleness=-0.0234 | KEEP
+Never retrain        | batch=95 | error=0.225 | staleness=0.0014 | KEEP
+Never retrain        | batch=96 | error=0.196 | staleness=-0.0113 | KEEP
+Never retrain        | batch=97 | error=0.254 | staleness=0.0079 | KEEP
+Never retrain        | batch=98 | error=0.225 | staleness=0.0001 | KEEP
+Never retrain        | batch=99 | error=0.219 | staleness=-0.0072 | KEEP
+
+===========================================================================
+Running: Always retrain
+===========================================================================
+Always retrain       | batch=85 | error=0.262 | staleness=0.0121 | RETRAIN
+Always retrain       | batch=86 | error=0.240 | staleness=0.0587 | RETRAIN
+Always retrain       | batch=87 | error=0.265 | staleness=0.0330 | RETRAIN
+Always retrain       | batch=88 | error=0.104 | staleness=-0.0031 | RETRAIN
+Always retrain       | batch=89 | error=0.130 | staleness=0.0233 | RETRAIN
+Always retrain       | batch=90 | error=0.106 | staleness=-0.0237 | RETRAIN
+Always retrain       | batch=91 | error=0.179 | staleness=0.0341 | RETRAIN
+Always retrain       | batch=92 | error=0.119 | staleness=-0.0127 | RETRAIN
+Always retrain       | batch=93 | error=0.196 | staleness=0.0331 | RETRAIN
+Always retrain       | batch=94 | error=0.254 | staleness=0.0564 | RETRAIN
+Always retrain       | batch=95 | error=0.161 | staleness=0.0126 | RETRAIN
+Always retrain       | batch=96 | error=0.216 | staleness=0.0367 | RETRAIN
+Always retrain       | batch=97 | error=0.260 | staleness=0.0514 | RETRAIN
+Always retrain       | batch=98 | error=0.196 | staleness=-0.0173 | RETRAIN
+Always retrain       | batch=99 | error=0.150 | staleness=0.0233 | RETRAIN
+
+===========================================================================
+Running: Periodic
+===========================================================================
+Periodic             | batch=85 | error=0.262 | staleness=0.0121 | RETRAIN
+Periodic             | batch=86 | error=0.240 | staleness=0.0587 | KEEP
+Periodic             | batch=87 | error=0.238 | staleness=0.0554 | KEEP
+Periodic             | batch=88 | error=0.177 | staleness=0.0313 | RETRAIN
+Periodic             | batch=89 | error=0.130 | staleness=0.0233 | KEEP
+Periodic             | batch=90 | error=0.102 | staleness=0.0089 | KEEP
+Periodic             | batch=91 | error=0.155 | staleness=0.0253 | RETRAIN
+Periodic             | batch=92 | error=0.119 | staleness=-0.0127 | KEEP
+Periodic             | batch=93 | error=0.205 | staleness=0.0074 | KEEP
+Periodic             | batch=94 | error=0.210 | staleness=0.0297 | RETRAIN
+Periodic             | batch=95 | error=0.161 | staleness=0.0126 | KEEP
+Periodic             | batch=96 | error=0.227 | staleness=0.0470 | KEEP
+Periodic             | batch=97 | error=0.300 | staleness=0.0713 | RETRAIN
+Periodic             | batch=98 | error=0.196 | staleness=-0.0173 | KEEP
+Periodic             | batch=99 | error=0.214 | staleness=-0.0116 | KEEP
+
+===========================================================================
+Running: CARA-T-inspired
+===========================================================================
+CARA-T-inspired      | batch=85 | error=0.262 | staleness=0.0121 | RETRAIN
+CARA-T-inspired      | batch=86 | error=0.240 | staleness=0.0587 | RETRAIN
+CARA-T-inspired      | batch=87 | error=0.265 | staleness=0.0330 | RETRAIN
+CARA-T-inspired      | batch=88 | error=0.104 | staleness=-0.0031 | RETRAIN
+CARA-T-inspired      | batch=89 | error=0.130 | staleness=0.0233 | RETRAIN
+CARA-T-inspired      | batch=90 | error=0.106 | staleness=-0.0237 | KEEP
+CARA-T-inspired      | batch=91 | error=0.163 | staleness=-0.0050 | RETRAIN
+CARA-T-inspired      | batch=92 | error=0.119 | staleness=-0.0127 | RETRAIN
+CARA-T-inspired      | batch=93 | error=0.196 | staleness=0.0331 | RETRAIN
+CARA-T-inspired      | batch=94 | error=0.254 | staleness=0.0564 | RETRAIN
+CARA-T-inspired      | batch=95 | error=0.161 | staleness=0.0126 | RETRAIN
+CARA-T-inspired      | batch=96 | error=0.216 | staleness=0.0367 | RETRAIN
+CARA-T-inspired      | batch=97 | error=0.260 | staleness=0.0514 | RETRAIN
+CARA-T-inspired      | batch=98 | error=0.196 | staleness=-0.0173 | RETRAIN
+CARA-T-inspired      | batch=99 | error=0.150 | staleness=0.0233 | RETRAIN
+
+===========================================================================
+INTEGRATED HOLDOUT AUDIT
+===========================================================================
+
+A. Batch coverage
+Never retrain       : rows=15, distinct batches=15, complete=True
+Always retrain      : rows=15, distinct batches=15, complete=True
+Periodic            : rows=15, distinct batches=15, complete=True
+CARA-T-inspired     : rows=15, distinct batches=15, complete=True
+
+B. Threshold decision verification
+Threshold = -0.01783014; matching decisions = 15/15
+
+C. Proxy-cost reconciliation
+Never retrain        | KEEP=15 | RETRAIN= 0 | retrain cost=0.00000 | keep cost=1.29281 | total=1.29281 | summary consistent=True
+Always retrain       | KEEP= 0 | RETRAIN=15 | retrain cost=1.20000 | keep cost=0.00000 | total=1.20000 | summary consistent=True
+Periodic             | KEEP=10 | RETRAIN= 5 | retrain cost=0.40000 | keep cost=0.73004 | total=1.13004 | summary consistent=True
+CARA-T-inspired      | KEEP= 1 | RETRAIN=14 | retrain cost=1.12000 | keep cost=0.04573 | total=1.16573 | summary consistent=True
+
+D. Audit plot
+  artifacts\cara_t\test_holdout\plots\holdout_threshold_audit.png
+
+E. Final audit artifacts
+  artifacts\cara_t\test_holdout\holdout_audit.csv
+  artifacts\cara_t\test_holdout\holdout_audit_summary.csv
+
+===========================================================================
+FINAL HOLDOUT SUMMARY
+===========================================================================
+       strategy  total_proxy_cost  mean_proxy_cost  retrain_count  keep_count  mean_accuracy  mean_precision  mean_recall  mean_f1  mean_roc_auc  mean_error_rate
+  Never retrain            1.2928           0.0862              0          15         0.7896          0.7514       0.8459   0.7860        0.8626           0.2104
+ Always retrain            1.2000           0.0800             15           0         0.8107          0.8162       0.7886   0.7900        0.8811           0.1893
+       Periodic            1.1300           0.0753              5          10         0.8042          0.8422       0.7450   0.7644        0.8746           0.1958
+CARA-T-inspired            1.1657           0.0777             14           1         0.8117          0.8155       0.7924   0.7914        0.8826           0.1883
+
+Saved artifacts:
+  artifacts\cara_t\test_holdout\holdout_run_log.txt
+  artifacts\cara_t\test_holdout\test_batch_results.csv
+  artifacts\cara_t\test_holdout\test_strategy_summary.csv
+  artifacts\cara_t\test_holdout\experiment_metadata.json
+  artifacts\cara_t\test_holdout\holdout_audit.csv
+  artifacts\cara_t\test_holdout\holdout_audit_summary.csv
+
+Saved PNG plots:
+  artifacts\cara_t\test_holdout\plots\holdout_accuracy_by_batch.png
+  artifacts\cara_t\test_holdout\plots\holdout_error_rate.png
+  artifacts\cara_t\test_holdout\plots\holdout_retraining_decisions.png
+  artifacts\cara_t\test_holdout\plots\holdout_threshold_audit.png
+  artifacts\cara_t\test_holdout\plots\holdout_total_proxy_cost.png
+  artifacts\cara_t\test_holdout\plots\validation_threshold_sensitivity.png
+
+Evaluation and integrated audit completed.
+===========================================================================

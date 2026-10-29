@@ -1,0 +1,18 @@
+{
+    "validation_batches": 15,
+    "reference_absolute_cost": 0.09678242911256316,
+    "mean_error_rate": 0.31085373087882057,
+    "mean_absolute_cost": 0.12564213623859138,
+    "mean_relative_staleness": 0.02885970712602822,
+    "max_relative_staleness": 0.1448355694698684,
+    "max_staleness_batch": 75,
+    "min_relative_staleness": -0.04230945409179753,
+    "min_staleness_batch": 78,
+    "plots": [
+        "relative_staleness.png",
+        "batch_error_rate.png",
+        "absolute_cost_vs_reference.png",
+        "error_vs_staleness.png",
+        "monitoring_dashboard.png"
+    ]
+}

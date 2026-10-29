@@ -1,0 +1,41 @@
+{
+  "experiment": "Electricity chronological holdout replay",
+  "training_batches": [
+    0,
+    69
+  ],
+  "validation_batches": [
+    70,
+    84
+  ],
+  "holdout_batches": [
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99
+  ],
+  "training_records": 31718,
+  "holdout_records": 6797,
+  "threshold_source": "Selected by sequential proxy-cost minimization on validation batches 70-84",
+  "validation_sensitivity_csv": "artifacts\\cara_t\\test_holdout\\validation_threshold_sensitivity.csv",
+  "validation_sensitivity_plot": "artifacts\\cara_t\\test_holdout\\plots\\validation_threshold_sensitivity.png",
+  "threshold": -0.01783014210728569,
+  "kappa": 0.08,
+  "periodic_interval": 3,
+  "retrain_epochs": 15,
+  "batch_size": 32,
+  "random_seed": 42,
+  "rbf_gamma": 0.13658201649045754,
+  "note": "CARA-T-inspired adaptation, not exact paper reproduction. Proxy cost is kappa for RETRAIN and absolute batch cost for KEEP. Batch labels are assumed available after evaluation for the test-then-train simulation. Holdout batches were previously inspected during EDA; threshold is not tuned on them here."
+}

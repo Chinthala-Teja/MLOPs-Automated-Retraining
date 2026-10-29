@@ -1,0 +1,64 @@
+{
+    "method": "fixed-model preliminary threshold calibration",
+    "validation_batches": [
+        70,
+        84
+    ],
+    "candidate_kappa_values": [
+        0.005,
+        0.01,
+        0.02,
+        0.04,
+        0.08
+    ],
+    "best_thresholds": [
+        {
+            "kappa": 0.005,
+            "threshold": 0.010960821036438723,
+            "total_proxy_cost": -0.06144205352260756,
+            "mean_proxy_cost": -0.00409613690150717,
+            "keep_count": 6.0,
+            "retrain_count": 9.0
+        },
+        {
+            "kappa": 0.01,
+            "threshold": 0.010960821036438723,
+            "total_proxy_cost": -0.016442053522607553,
+            "mean_proxy_cost": -0.00109613690150717,
+            "keep_count": 6.0,
+            "retrain_count": 9.0
+        },
+        {
+            "kappa": 0.02,
+            "threshold": 0.02268802560279004,
+            "total_proxy_cost": 0.05790976789864423,
+            "mean_proxy_cost": 0.0038606511932429487,
+            "keep_count": 8.0,
+            "retrain_count": 7.0
+        },
+        {
+            "kappa": 0.04,
+            "threshold": 0.06079008471581368,
+            "total_proxy_cost": 0.1708488610124907,
+            "mean_proxy_cost": 0.01138992406749938,
+            "keep_count": 10.0,
+            "retrain_count": 5.0
+        },
+        {
+            "kappa": 0.08,
+            "threshold": 0.08771462076962774,
+            "total_proxy_cost": 0.3341416137038064,
+            "mean_proxy_cost": 0.02227610758025376,
+            "keep_count": 12.0,
+            "retrain_count": 3.0
+        }
+    ],
+    "limitations": [
+        "Uses Model V1 staleness values only.",
+        "Does not train replacement models.",
+        "Does not account for future costs after retraining.",
+        "Kappa values are experimental sensitivity settings, not measured operational costs.",
+        "Not the complete CARA-T strategy-cost optimization."
+    ],
+    "next_step": "Implement sequential validation replay with model updates and a consistent strategy-cost calculation."
+}

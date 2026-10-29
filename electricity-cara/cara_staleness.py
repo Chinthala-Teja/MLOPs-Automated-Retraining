@@ -265,3 +265,266 @@ with open(metadata_path, "w", encoding="utf-8") as file:
 print("\nStaleness calculation completed.")
 print(f"Results: {csv_path}")
 print(f"Metadata: {metadata_path}")
+
+
+
+# --------------------------------------------------
+# 9. Generate visualization artifacts
+# --------------------------------------------------
+
+import matplotlib
+matplotlib.use("Agg")  # Save figures without opening windows
+import matplotlib.pyplot as plt
+
+PLOT_DIR = OUTPUT_DIR / "plots"
+PLOT_DIR.mkdir(parents=True, exist_ok=True)
+
+if results_df.empty:
+    raise ValueError("No validation results available to plot.")
+
+# Shared plot settings
+batch_ids = results_df["batch_id"].to_numpy()
+
+
+# --------------------------------------------------
+# Plot 1: Relative staleness by batch
+# --------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(11, 5))
+
+ax.bar(
+    batch_ids.astype(str),
+    results_df["relative_staleness"],
+)
+
+ax.axhline(
+    0,
+    linestyle="--",
+    linewidth=1.2,
+    label="Reference cost",
+)
+
+ax.set_title("CARA-T: Relative Staleness by Validation Batch")
+ax.set_xlabel("Batch ID")
+ax.set_ylabel("Relative Staleness")
+ax.legend()
+ax.grid(axis="y", alpha=0.3)
+
+fig.tight_layout()
+fig.savefig(
+    PLOT_DIR / "relative_staleness.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close(fig)
+
+
+# --------------------------------------------------
+# Plot 2: Classification error rate by batch
+# --------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(11, 5))
+
+ax.plot(
+    batch_ids,
+    results_df["batch_error_rate"],
+    marker="o",
+    linewidth=1.8,
+    label="Model V1 error rate",
+)
+
+ax.set_title("Model V1: Classification Error Across Batches")
+ax.set_xlabel("Batch ID")
+ax.set_ylabel("Error Rate")
+ax.set_ylim(0, 1)
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+fig.tight_layout()
+fig.savefig(
+    PLOT_DIR / "batch_error_rate.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close(fig)
+
+
+# --------------------------------------------------
+# Plot 3: Absolute cost versus reference cost
+# --------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(11, 5))
+
+ax.plot(
+    batch_ids,
+    results_df["batch_absolute_cost"],
+    marker="o",
+    linewidth=1.8,
+    label="Batch absolute cost",
+)
+
+ax.axhline(
+    reference_cost,
+    linestyle="--",
+    linewidth=1.5,
+    label="Training reference cost",
+)
+
+ax.set_title("Similarity-Weighted Loss: Batch vs Reference")
+ax.set_xlabel("Batch ID")
+ax.set_ylabel("Absolute Cost")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+fig.tight_layout()
+fig.savefig(
+    PLOT_DIR / "absolute_cost_vs_reference.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close(fig)
+
+
+# --------------------------------------------------
+# Plot 4: Error rate versus relative staleness
+# --------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(8, 6))
+
+scatter = ax.scatter(
+    results_df["batch_error_rate"],
+    results_df["relative_staleness"],
+    c=batch_ids,
+    s=75,
+)
+
+for _, row in results_df.iterrows():
+    ax.annotate(
+        str(int(row["batch_id"])),
+        (
+            row["batch_error_rate"],
+            row["relative_staleness"],
+        ),
+        xytext=(4, 4),
+        textcoords="offset points",
+        fontsize=8,
+    )
+
+fig.colorbar(scatter, ax=ax, label="Batch ID")
+ax.axhline(0, linestyle="--", linewidth=1)
+
+ax.set_title("Classification Error vs Relative Staleness")
+ax.set_xlabel("Classification Error Rate")
+ax.set_ylabel("Relative Staleness")
+ax.grid(True, alpha=0.3)
+
+fig.tight_layout()
+fig.savefig(
+    PLOT_DIR / "error_vs_staleness.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close(fig)
+
+
+# --------------------------------------------------
+# Plot 5: Compact monitoring dashboard
+# --------------------------------------------------
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+
+axes[0].plot(
+    batch_ids,
+    results_df["batch_error_rate"],
+    marker="o",
+)
+axes[0].set_ylabel("Error Rate")
+axes[0].set_title("Validation Monitoring Dashboard")
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(
+    batch_ids,
+    results_df["batch_absolute_cost"],
+    marker="o",
+)
+axes[1].axhline(
+    reference_cost,
+    linestyle="--",
+    label="Reference cost",
+)
+axes[1].set_ylabel("Absolute Cost")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+axes[2].bar(
+    batch_ids.astype(str),
+    results_df["relative_staleness"],
+)
+axes[2].axhline(0, linestyle="--", linewidth=1)
+axes[2].set_ylabel("Relative Staleness")
+axes[2].set_xlabel("Batch ID")
+axes[2].grid(axis="y", alpha=0.3)
+
+fig.tight_layout()
+fig.savefig(
+    PLOT_DIR / "monitoring_dashboard.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+plt.close(fig)
+
+
+# --------------------------------------------------
+# 10. Save a concise summary
+# --------------------------------------------------
+
+summary = {
+    "validation_batches": int(len(results_df)),
+    "reference_absolute_cost": float(reference_cost),
+    "mean_error_rate": float(results_df["batch_error_rate"].mean()),
+    "mean_absolute_cost": float(
+        results_df["batch_absolute_cost"].mean()
+    ),
+    "mean_relative_staleness": float(
+        results_df["relative_staleness"].mean()
+    ),
+    "max_relative_staleness": float(
+        results_df["relative_staleness"].max()
+    ),
+    "max_staleness_batch": int(
+        results_df.loc[
+            results_df["relative_staleness"].idxmax(),
+            "batch_id",
+        ]
+    ),
+    "min_relative_staleness": float(
+        results_df["relative_staleness"].min()
+    ),
+    "min_staleness_batch": int(
+        results_df.loc[
+            results_df["relative_staleness"].idxmin(),
+            "batch_id",
+        ]
+    ),
+    "plots": [
+        "relative_staleness.png",
+        "batch_error_rate.png",
+        "absolute_cost_vs_reference.png",
+        "error_vs_staleness.png",
+        "monitoring_dashboard.png",
+    ],
+}
+
+with open(
+    OUTPUT_DIR / "visualization_summary.json",
+    "w",
+    encoding="utf-8",
+) as file:
+    json.dump(summary, file, indent=4)
+
+print("\nVisualization artifacts generated:")
+
+for filename in summary["plots"]:
+    print(f"  {PLOT_DIR / filename}")
+
+print(f"  {OUTPUT_DIR / 'visualization_summary.json'}")
