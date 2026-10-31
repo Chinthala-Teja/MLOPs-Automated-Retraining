@@ -1,6 +1,6 @@
 # CoverType cost-aware retraining experiment
 
-The notebook companion [Covertype_CARA_T.ipynb](Covertype_CARA_T.ipynb)
+The notebook companion [Covertype_CARA_T.ipynb](../Covertype_CARA_T.ipynb)
 follows the Airline notebook's research/evaluation flow and cites the supplied
 CARA paper. It analyzes saved artifacts by default; its final cell can
 optionally rerun the full canonical pipeline.

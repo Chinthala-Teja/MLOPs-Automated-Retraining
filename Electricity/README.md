@@ -1,6 +1,6 @@
 # Electricity MLOps — Cost-Aware Retraining
 
-The notebook companion [Electricity_CARA_T.ipynb](electricity-cara/Electricity_CARA_T.ipynb)
+The notebook companion [Electricity_CARA_T.ipynb](../Electricity_CARA_T.ipynb)
 follows the Airline notebook's research/evaluation flow, cites the supplied
 CARA paper, and reads saved results by default. Its final cell can optionally
 rerun the canonical holdout evaluator.
