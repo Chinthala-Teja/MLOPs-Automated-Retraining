@@ -1,7 +1,9 @@
 """ReTrainIQ dashboard (Streamlit). Run:  streamlit run frontend/app.py
 
-Pages: Setup, Monitor, Report, Chat. The app only calls orchestrator / module
-functions; every number shown comes from code, never from the LLM.
+One product, seven sections: Overview, Project Setup, Monitoring, Analysis & Reports,
+Retraining History, AI Assistant, Documentation. The app calls the orchestrator and the
+module functions directly (there is no HTTP layer); every number shown is computed by
+the backend, never by the LLM.
 """
 from __future__ import annotations
 
@@ -11,27 +13,34 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-for _folder in ("0-Init", "1-Profile", "2-Drift", "3-CARA", "4-Metrics", "5-Analysis", "6-Decision"):
+for _folder in ("0-Init", "1-Profile", "2-Drift", "3-CARA", "4-Metrics", "5-Analysis", "6-Decision", "frontend"):
     if str(ROOT_DIR / _folder) not in sys.path:
         sys.path.insert(0, str(ROOT_DIR / _folder))
 
 import pandas as pd  # noqa: E402
-import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
+import demo as demo_mod  # noqa: E402
 import ri_decision.orchestrator as orch  # noqa: E402
 import ri_init.store as store  # noqa: E402
 import ri_profile.understand as understand  # noqa: E402
+import ui  # noqa: E402
 from ri_analysis.chat import chat as chat_fn  # noqa: E402
 from ri_analysis.chat import default_tools  # noqa: E402
 from ri_analysis.llm import get_client  # noqa: E402
 from ri_analysis.summary import report_from_row, summarize_with_meta, template_summary  # noqa: E402
 from ri_drift import plots as drift_plots  # noqa: E402
-from ri_drift.scenarios import inject_covariate_shift  # noqa: E402
 from ri_init.config import WORKSPACE, load_config  # noqa: E402
+from ri_metrics.metrics import REGISTRY, default_plan  # noqa: E402
 
-ZONE_COLOR = {"RETRAIN": "#c0392b", "HUMAN": "#d68910", "KEEP": "#1e8449", "BLOCKED": "#566573"}
-ZONE_TEXT = {"RETRAIN": "RETRAIN (automatic)", "HUMAN": "HUMAN REVIEW", "KEEP": "KEEP", "BLOCKED": "BLOCKED"}
+PAGES = ["Overview", "Project Setup", "Monitoring", "Analysis & Reports", "Retraining History",
+         "AI Assistant", "Documentation"]
+DOCS = {"User manual": "USER_MANUAL.md", "Project explanation": "PROJECT_EXPLANATION.md",
+        "System architecture": "SYSTEM_ARCHITECTURE.md", "Data flow": "DATA_FLOW.md",
+        "API reference": "API_REFERENCE.md", "Tech stack": "TECH_STACK.md"}
+MANUALS = ["ReTrainIQ_Quick_Start.png", "ReTrainIQ_Workflow.png", "ReTrainIQ_Module_Guide.png",
+           "ReTrainIQ_Retraining_Lifecycle.png", "ReTrainIQ_System_Architecture.png",
+           "ReTrainIQ_API_Data_Flow.png"]
 
 
 # ----------------------------------------------------------------------------- data access
@@ -45,13 +54,9 @@ def load_profile(project_id: str) -> Dict[str, Any]:
     return json.loads((WORKSPACE / project_id / "profile.json").read_text(encoding="utf-8"))
 
 
-def is_set_up(project_id: str) -> bool:
-    return (WORKSPACE / project_id / "state.json").is_file() and store.get_active_version(project_id) is not None
-
-
-def load_reports(project_id: str) -> List[Dict[str, Any]]:
-    profile = load_profile(project_id)
-    return [report_from_row(r, profile) for r in store.get_reports(project_id)]
+def is_set_up(project_id: Optional[str]) -> bool:
+    return bool(project_id) and (WORKSPACE / project_id / "state.json").is_file() \
+        and store.get_active_version(project_id) is not None
 
 
 def decisions_by_report(project_id: str) -> Dict[int, List[Dict[str, Any]]]:
@@ -61,6 +66,37 @@ def decisions_by_report(project_id: str) -> Dict[int, List[Dict[str, Any]]]:
     return out
 
 
+def load_reports(project_id: str) -> List[Dict[str, Any]]:
+    profile, actions = load_profile(project_id), decisions_by_report(project_id)
+    reports = []
+    for row in store.get_reports(project_id):
+        rep = report_from_row(row, profile)
+        rep["decisions"] = actions.get(rep["report_id"], [])
+        rep["action"] = rep["decisions"][-1]["action"] if rep["decisions"] else None
+        reports.append(rep)
+    return reports
+
+
+def history_frame(reports: List[Dict[str, Any]]) -> pd.DataFrame:
+    rows = []
+    for rep in reports:
+        if rep["zone"] == "BLOCKED":
+            continue
+        primary = rep["quality"].get("primary_metric")
+        acts = [d["action"] for d in rep["decisions"]]
+        basis = rep["decision"].get("basis")
+        rows.append({
+            "check": rep["report_id"], "zone": rep["zone"], "P": rep["decision"].get("P"),
+            "staleness": rep["cara"].get("staleness") if basis in ("measured", "estimated") else None,
+            "tau_star": rep["cara"].get("tau_star"), "basis": basis,
+            "drift_share": rep["drift"].get("drift_share"),
+            "primary_metric": rep["quality"].get("metrics", {}).get(primary or "", {}).get("value"),
+            "event": next((a for a in acts if a in ("PROMOTED", "VERIFY_FAILED", "ROLLED_BACK")), ""),
+        })
+    return pd.DataFrame(rows, columns=["check", "zone", "P", "staleness", "tau_star", "basis", "drift_share",
+                                       "primary_metric", "event"])
+
+
 def save_upload(uploaded: Any, folder: Path) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / Path(uploaded.name).name
@@ -68,416 +104,659 @@ def save_upload(uploaded: Any, folder: Path) -> Path:
     return path
 
 
-def history_frame(project_id: str) -> pd.DataFrame:
-    actions = decisions_by_report(project_id)
-    rows = []
-    for rep in load_reports(project_id):
-        if rep["zone"] == "BLOCKED":
-            continue
-        primary = rep["quality"].get("primary_metric")
-        metric = rep["quality"].get("metrics", {}).get(primary or "", {}).get("value")
-        acts = [d["action"] for d in actions.get(rep["report_id"], [])]
-        rows.append({
-            "check": rep["report_id"], "zone": rep["zone"], "P": rep["decision"].get("P"),
-            "staleness": rep["cara"].get("staleness"), "tau_star": rep["cara"].get("tau_star"),
-            "basis": rep["decision"].get("basis"), "drift_share": rep["drift"].get("drift_share"),
-            "primary_metric": metric,
-            "event": next((a for a in acts if a in ("PROMOTED", "VERIFY_FAILED", "ROLLED_BACK")), ""),
-        })
-    return pd.DataFrame(rows)
+def fmt(value: Any, digits: int = 3) -> str:
+    return "n/a" if value is None or (isinstance(value, float) and pd.isna(value)) else f"{float(value):.{digits}f}"
 
 
-# ----------------------------------------------------------------------------- charts
-def gauge(p: float, cfg: Dict[str, Any]) -> go.Figure:
-    keep, retrain = 100 * cfg["keep_limit"], 100 * cfg["retrain_limit"]
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=100 * p, number={"suffix": "%"},
-        gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#2c3e50"},
-               "steps": [{"range": [0, keep], "color": "#d5f5e3"},
-                         {"range": [keep, retrain], "color": "#fdebd0"},
-                         {"range": [retrain, 100], "color": "#f5b7b1"}]},
-        title={"text": "Decision score"}))
-    fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=10))
-    return fig
+# ----------------------------------------------------------------------------- Overview
+def page_overview(project_id: Optional[str]) -> None:
+    ui.hero("Welcome to ReTrainIQ — Intelligent ML Retraining Advisor",
+            "Register a deployed scikit-learn model, send it new data, and get an evidence-backed answer to one "
+            "question: keep the model, ask a human, or retrain it.")
+    ui.flow_strip()
+    st.write("")
+    if not is_set_up(project_id):
+        st.info("No project is registered yet. Open **Project Setup** to register your model, or load the demo project there.")
+        return
+    profile, cfg = load_profile(project_id), load_config(project_id)
+    reports = load_reports(project_id)
+    hist = history_frame(reports)
+    active = store.get_active_version(project_id)
+    last = reports[-1] if reports else None
+    pending = sum(1 for r in reports if r["zone"] == "HUMAN" and r["action"] in (None, "pending"))
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        ui.card("Active model", active["version"], profile["model"].get("algorithm", ""), "info")
+    with c2:
+        ui.card("Checks run", str(len(reports)), f"batch size {profile.get('batch_size_B')}")
+    with c3:
+        zone = last["zone"] if last else None
+        ui.card("Latest decision", ui.ZONE_LABEL.get(zone, "none yet"), f"check {last['report_id']}" if last else "",
+                ui.ZONE_TONE.get(zone or "", "idle"))
+    with c4:
+        ui.card("Latest score", fmt(last["decision"].get("P") * 100, 1) if last and "P" in last["decision"] else "n/a",
+                f"retrain at {cfg['retrain_limit'] * 100:.0f}, keep at {cfg['keep_limit'] * 100:.0f}")
+    with c5:
+        ui.card("Waiting for you", str(pending), "checks in human review", "warn" if pending else "good")
+    st.write("")
+    st.markdown(f"**{project_id}** — {profile.get('problem_statement', '')}")
+    if len(hist):
+        st.plotly_chart(ui.timeline(hist, cfg), use_container_width=True)
+        st.caption("Dot colour = zone (green keep, amber human review, red retrain). Vertical lines mark "
+                   "promotions, rejected candidates and rollbacks.")
+    else:
+        st.info("No checks yet. Go to **Monitoring** to upload a batch or run the guided demo.")
 
 
-def timeline(hist: pd.DataFrame, cfg: Dict[str, Any]) -> go.Figure:
-    from plotly.subplots import make_subplots
-
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06,
-                        subplot_titles=("Decision score", "Staleness vs tau*", "Primary metric"))
-    fig.add_trace(go.Scatter(x=hist["check"], y=hist["P"], mode="lines+markers", name="score",
-                             marker=dict(color=[ZONE_COLOR.get(z, "#555") for z in hist["zone"]], size=9),
-                             line=dict(color="#95a5a6")), row=1, col=1)
-    fig.add_hline(y=cfg["retrain_limit"], line_dash="dash", line_color=ZONE_COLOR["RETRAIN"], row=1, col=1)
-    fig.add_hline(y=cfg["keep_limit"], line_dash="dash", line_color=ZONE_COLOR["KEEP"], row=1, col=1)
-    fig.add_trace(go.Scatter(x=hist["check"], y=hist["staleness"], mode="lines+markers", name="staleness",
-                             line=dict(color="#2c3e50")), row=2, col=1)
-    fig.add_trace(go.Scatter(x=hist["check"], y=hist["tau_star"], mode="lines", name="tau*",
-                             line=dict(color=ZONE_COLOR["RETRAIN"], dash="dash")), row=2, col=1)
-    fig.add_trace(go.Scatter(x=hist["check"], y=hist["primary_metric"], mode="lines+markers", name="metric",
-                             line=dict(color="#1f618d")), row=3, col=1)
-    for _, row in hist[hist["event"] != ""].iterrows():
-        color = {"PROMOTED": "#1e8449", "VERIFY_FAILED": "#d68910", "ROLLED_BACK": "#c0392b"}[row["event"]]
-        fig.add_vline(x=row["check"], line_color=color, line_width=2, opacity=0.6)
-        fig.add_annotation(x=row["check"], y=1.0, yref="paper", text=row["event"].replace("_", " ").title(),
-                           showarrow=False, font=dict(color=color, size=11), yshift=12)
-    fig.update_layout(height=620, showlegend=False, margin=dict(l=10, r=10, t=50, b=10))
-    return fig
-
-
-# ----------------------------------------------------------------------------- pages
+# ----------------------------------------------------------------------------- Project Setup (Module 1)
 def page_setup(project_id: Optional[str]) -> None:
-    st.header("Setup")
-    st.caption("Once per ML project: read the project, confirm the profile, register the model.")
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Demo project")
-        st.write("A synthetic flight-delay project: 50,000 reference rows, a Random Forest pipeline and "
-                 "50 stream batches with a simulated concept shift after batch 25.")
-        if st.button("Create / reset the demo project"):
-            with st.spinner("Generating data, training v1 and calibrating CARA-T (about a minute)..."):
+    ui.page_title("Project Setup", "Module 1 — understand the ML project. Done once per project.")
+    tab_new, tab_demo, tab_status = st.tabs(["Register a project", "Demo project", "Current registration"])
+    with tab_demo:
+        st.write("A synthetic flight-delay project: 50,000 reference rows, a Random Forest pipeline, a 6,000-row "
+                 "holdout and 50 stream batches with a simulated concept shift after batch 25.")
+        ui.simulated_banner("The demo project is synthetic. Results on it say nothing about real data.")
+        if st.button("Load / reset the demo project", type="primary"):
+            with st.status("Preparing the demo project...", expanded=True) as status:
                 if not (WORKSPACE / "demo" / "profile.json").is_file():
+                    st.write("Generating data and training model v1...")
                     from ri_init import make_demo_project
                     make_demo_project.main()
+                st.write("Registering v1, computing the holdout baseline, calibrating CARA-T...")
                 res = orch.reset_project("demo")
-            st.success(f"Demo project ready: {res['status']}")
+                status.update(label=f"Demo project ready ({res['status']})", state="complete")
             for issue in res.get("issues", []):
                 st.warning(issue)
-    with right:
-        st.subheader("Status")
-        if project_id and is_set_up(project_id):
-            prof, active = load_profile(project_id), store.get_active_version(project_id)
-            st.write(f"**{project_id}**: {prof.get('problem_statement', '')}")
-            st.write(f"Model: {prof['model'].get('algorithm')} | active version: **{active['version']}** | "
-                     f"primary metric: {prof.get('primary_metric')} | batch size: {prof.get('batch_size_B')}")
-            st.write("LLM: " + ("configured" if get_client() else "not configured (template summaries, manual profile)"))
+    with tab_status:
+        if is_set_up(project_id):
+            profile, active = load_profile(project_id), store.get_active_version(project_id)
+            st.markdown(f"**{project_id}** {ui.pill('REGISTERED', 'good')}", unsafe_allow_html=True)
+            st.json({k: profile.get(k) for k in ("problem_statement", "task", "features", "model", "data",
+                                                 "primary_metric", "batch_size_B", "offline_batches_N", "W")})
+            st.caption(f"Active version: {active['version']}. LLM: "
+                       + ("configured" if get_client() else "not configured — heuristic profile and template summaries are used."))
         else:
-            st.info("No project is set up yet.")
+            st.info("Nothing registered for the selected project.")
+    with tab_new:
+        register_form()
+        if "scan_log" in st.session_state:
+            module1_progress(st.session_state["scan_log"])
+        if "draft" in st.session_state:
+            profile_editor()
 
-    st.divider()
-    st.subheader("Register your own project")
-    st.caption("Version 1 supports a scikit-learn Pipeline that accepts raw rows and tabular data. "
-               "Repository code is scanned as text only and is never executed.")
+
+def register_form() -> None:
+    st.markdown("#### 1. Point ReTrainIQ at your project")
+    st.caption("Repository code is read as text only and is never executed. Version 1 supports a scikit-learn "
+               "Pipeline that accepts raw rows, and tabular data.")
     c1, c2 = st.columns(2)
-    new_id = c1.text_input("Project id (letters, digits, dashes)", value="myproject")
-    url = c1.text_input("GitHub URL (https://github.com/owner/repo)")
-    zip_file = c1.file_uploader("...or project ZIP", type=["zip"])
-    model_file = c2.file_uploader("Saved model (.joblib / .pkl)", type=["joblib", "pkl"])
-    ref_file = c2.file_uploader("Reference data = the model's training data (CSV / Parquet)", type=["csv", "parquet"])
-    hold_file = c2.file_uploader("Holdout the model never saw (optional but recommended)", type=["csv", "parquet"])
-    target = c2.text_input("Target column (blank = last column)")
-    if st.button("Scan and draft profile"):
-        draft_profile(new_id.strip(), url.strip(), zip_file, model_file, ref_file, hold_file, target.strip())
-    if "draft" in st.session_state:
-        confirm_profile()
+    new_id = c1.text_input("Project id", value="myproject", help="Letters, digits, dashes, underscores.")
+    url = c1.text_input("GitHub repository URL", placeholder="https://github.com/owner/repo")
+    zip_file = c1.file_uploader("...or upload the project ZIP", type=["zip"])
+    ref_file = c2.file_uploader("Training / reference dataset (CSV or Parquet)", type=["csv", "parquet"])
+    model_file = c2.file_uploader("Trained model artifact (.joblib / .pkl) — needed if not in the repository",
+                                  type=["joblib", "pkl"])
+    hold_file = c2.file_uploader("Holdout the model never saw (recommended)", type=["csv", "parquet"])
+    target = c2.text_input("Target column", placeholder="leave blank to use the last column")
+    if st.button("Analyse Project", type="primary"):
+        analyse_project(new_id.strip(), url.strip(), zip_file, model_file, ref_file, hold_file, target.strip())
 
 
-def draft_profile(new_id: str, url: str, zip_file: Any, model_file: Any, ref_file: Any, hold_file: Any, target: str) -> None:
+def analyse_project(new_id: str, url: str, zip_file: Any, model_file: Any, ref_file: Any, hold_file: Any,
+                    target: str) -> None:
     if not new_id.replace("-", "").replace("_", "").isalnum():
         st.error("Project id may contain only letters, digits, dashes and underscores.")
         return
-    if ref_file is None or model_file is None:
-        st.error("The reference data and the saved model are required.")
+    if ref_file is None:
+        st.error("The training / reference dataset is required.")
         return
     proj = WORKSPACE / new_id
+    log: List[Dict[str, str]] = []
     scan: Optional[Dict[str, Any]] = None
-    try:
-        if url:
-            scan = understand.scan_project(understand.fetch_repo(url, proj / "repo"))
-        elif zip_file is not None:
-            zpath = save_upload(zip_file, proj / "upload")
-            understand.extract_zip_safe(zpath, proj / "repo")
-            scan = understand.scan_project(proj / "repo")
-    except Exception as exc:  # shown to the user; nothing was executed
-        st.error(f"Could not read the project: {exc}")
-        return
-    ref_path = save_upload(ref_file, proj / "data")
-    model_path = save_upload(model_file, proj / "models" / "v1")
-    if model_path.name != "model.joblib":
-        model_path = model_path.replace(model_path.with_name("model.joblib"))
-    hold_path = save_upload(hold_file, proj / "data") if hold_file is not None else None
-    llm, source = get_client(), "heuristic"
-    profile = understand.heuristic_profile(scan=scan, dataset_path=str(ref_path), target=target or None)
-    if llm is not None and scan is not None:
+    with st.status("Module 1 is reading the project...", expanded=True) as status:
         try:
-            extracted = understand.extract_profile(understand.build_context(scan), llm)
-            for key in ("problem_statement", "task", "features", "primary_metric"):
-                if extracted.get(key) not in (None, "unknown", {}, []):
-                    profile[key] = extracted[key]
-            source = "LLM draft (verify it)"
-        except Exception as exc:
-            st.warning(f"LLM profile extraction failed ({exc}); using the heuristic profile.")
-    profile["project_id"] = new_id
-    profile.setdefault("model", {})["artifact"] = str(model_path)
-    profile.setdefault("data", {})["reference_path"] = str(ref_path)
-    profile["data"]["holdout_path"] = str(hold_path) if hold_path else None
-    st.session_state["draft"] = {"profile": profile, "source": source}
-
-
-def confirm_profile() -> None:
-    draft = st.session_state["draft"]
-    st.write(f"Profile draft ({draft['source']}). Edit the JSON if anything is wrong, then confirm.")
-    text = st.text_area("Profile", json.dumps(draft["profile"], indent=2), height=380)
-    if st.button("Confirm profile and register the model"):
-        try:
-            profile = json.loads(text)
-        except ValueError as exc:
-            st.error(f"Profile is not valid JSON: {exc}")
+            if url:
+                st.write("Cloning the repository (depth 1)...")
+                scan = understand.scan_project(understand.fetch_repo(url, proj / "repo"))
+            elif zip_file is not None:
+                st.write("Extracting the ZIP safely...")
+                understand.extract_zip_safe(save_upload(zip_file, proj / "upload"), proj / "repo")
+                scan = understand.scan_project(proj / "repo")
+        except Exception as exc:  # nothing was executed; show the reason
+            status.update(label="Could not read the project", state="error")
+            st.error(str(exc))
             return
-        with st.spinner("Verifying the profile, computing the baseline and calibrating CARA-T..."):
-            final = understand.finalize_profile(profile)
-            blocking = [i for i in final.get("issues", []) if "ERROR" in i.upper() or "cannot" in i.lower()]
-            for issue in final.get("issues", []):
-                st.warning(issue)
-            if blocking:
-                st.error("Fix the issues above before registering.")
-                return
-            res = orch.setup_project({k: v for k, v in final.items() if k != "issues"})
-        st.success(f"Project '{final['project_id']}' registered: {res['status']}")
-        for issue in res.get("issues", []):
+        source = "GitHub repository" if url else "ZIP archive" if zip_file is not None else "no repository (dataset only)"
+        log.append({"title": "Repository / ZIP scanning", "detail": source, "state": "done" if scan else "skip"})
+        if scan:
+            log.append({"title": "File structure analysis", "detail": f"{len(scan['file_tree'])} entries listed (depth 3)", "state": "done"})
+            log.append({"title": "README and dependency inspection",
+                        "detail": f"README {'found' if scan['readme'] else 'not found'}; requirements "
+                                  f"{'found' if scan['requirements'] else 'not found'}", "state": "done"})
+            log.append({"title": "Model artifact discovery",
+                        "detail": ", ".join(Path(m).name for m in scan["model_files"][:4]) or "none in the repository",
+                        "state": "done" if scan["model_files"] else "skip"})
+            log.append({"title": "Dataset identification",
+                        "detail": f"{len(scan['data_files'])} data file(s) in the repository", "state": "done"})
+        ref_path = save_upload(ref_file, proj / "data")
+        hold_path = save_upload(hold_file, proj / "data") if hold_file is not None else None
+        model_path: Optional[Path] = None
+        if model_file is not None:
+            model_path = save_upload(model_file, proj / "models" / "v1")
+            if model_path.name != "model.joblib":
+                model_path = model_path.replace(model_path.with_name("model.joblib"))
+        elif scan and scan["model_files"]:
+            model_path = Path(scan["model_files"][0])
+            if not model_path.is_absolute():
+                model_path = Path(scan["root"]) / model_path
+        if model_path is None:
+            status.update(label="No model artifact", state="error")
+            st.error("No model file was uploaded and none was found in the repository.")
+            return
+        st.write("Drafting the profile...")
+        profile = understand.heuristic_profile(scan=scan, dataset_path=str(ref_path), target=target or None)
+        drafted_by = "heuristics (column types, last column as target)"
+        llm = get_client()
+        if llm is not None and scan is not None:
+            try:
+                extracted = understand.extract_profile(understand.build_context(scan), llm)
+                for key in ("problem_statement", "task", "features", "primary_metric"):
+                    if extracted.get(key) not in (None, "unknown", {}, []):
+                        profile[key] = extracted[key]
+                drafted_by = "LLM draft, checked by code"
+            except Exception as exc:
+                st.warning(f"LLM profile extraction failed ({exc}); the heuristic profile is used.")
+        profile["project_id"] = new_id
+        profile.setdefault("model", {})["artifact"] = str(model_path)
+        profile.setdefault("data", {})["reference_path"] = str(ref_path)
+        profile["data"]["holdout_path"] = str(hold_path) if hold_path else None
+        feats = profile.get("features", {})
+        log.append({"title": "Feature and target identification",
+                    "detail": f"target '{profile.get('task', {}).get('target')}', {len(feats.get('numeric', []))} numeric, "
+                              f"{len(feats.get('categorical', []))} categorical", "state": "done"})
+        log.append({"title": "ML task identification",
+                    "detail": f"{profile.get('task', {}).get('type')} / {profile.get('task', {}).get('subtype')}", "state": "done"})
+        log.append({"title": "Model framework and algorithm",
+                    "detail": f"{profile['model'].get('framework')} / {profile['model'].get('algorithm')}", "state": "done"})
+        log.append({"title": "Profile generation", "detail": drafted_by, "state": "done"})
+        st.write("Verifying the profile (columns, class balance, model smoke test in the sandbox)...")
+        issues = understand.verify_profile(profile)
+        log.append({"title": "Profile validation",
+                    "detail": "; ".join(issues) if issues else "no issues found",
+                    "state": "fail" if any("error" in i.lower() for i in issues) else "done"})
+        status.update(label="Module 1 finished — review the profile below", state="complete")
+    st.session_state["scan_log"] = log
+    st.session_state["draft"] = profile
+
+
+def module1_progress(log: List[Dict[str, str]]) -> None:
+    st.markdown("#### 2. What Module 1 found")
+    ui.steps(log)
+
+
+def profile_editor() -> None:
+    draft = st.session_state["draft"]
+    st.markdown("#### 3. Review and correct the profile")
+    st.caption("Nothing is registered until you confirm. Correct anything Module 1 got wrong.")
+    ref = understand._resolve_path(draft["data"]["reference_path"])
+    columns = list((pd.read_parquet(ref) if str(ref).endswith(".parquet") else pd.read_csv(ref, nrows=5)).columns)
+    task, feats = draft.get("task", {}), draft.get("features", {})
+    with st.form("profile_form"):
+        problem = st.text_area("Problem statement", draft.get("problem_statement", ""), height=70)
+        c1, c2, c3 = st.columns(3)
+        ttype = c1.selectbox("Task", ["classification", "regression"],
+                             index=0 if task.get("type", "classification") == "classification" else 1)
+        subtype = c2.selectbox("Classification kind", ["binary", "multiclass"],
+                               index=0 if task.get("subtype", "binary") != "multiclass" else 1)
+        target = c3.selectbox("Target column", columns,
+                              index=columns.index(task["target"]) if task.get("target") in columns else len(columns) - 1)
+        others = [c for c in columns if c != target]
+        numeric = st.multiselect("Numeric features", others, [c for c in feats.get("numeric", []) if c in others])
+        categorical = st.multiselect("Categorical features", others, [c for c in feats.get("categorical", []) if c in others])
+        c4, c5, c6 = st.columns(3)
+        algorithm = c4.text_input("Model algorithm", draft.get("model", {}).get("algorithm", ""))
+        trial = {"task": {"type": ttype, "subtype": subtype if ttype == "classification" else None}}
+        options = default_plan({**trial, "primary_metric": draft.get("primary_metric")})
+        primary = c5.selectbox("Primary evaluation metric", options,
+                               index=options.index(draft.get("primary_metric")) if draft.get("primary_metric") in options else 0)
+        batch = c6.number_input("Batch size B (rows per check)", 200, 100000, int(draft.get("batch_size_B", 2000)), 100)
+        st.caption(f"Model artifact: `{draft['model']['artifact']}`  |  Reference dataset: `{draft['data']['reference_path']}`  |  "
+                   f"Holdout: `{draft['data'].get('holdout_path') or 'none — quality comparison will be switched off'}`")
+        confirmed = st.form_submit_button("Confirm Profile", type="primary")
+    if not confirmed:
+        return
+    draft.update({"problem_statement": problem, "primary_metric": primary, "batch_size_B": int(batch)})
+    draft["task"] = {**task, "type": ttype, "subtype": subtype if ttype == "classification" else None, "target": target}
+    draft["features"] = {"numeric": numeric, "categorical": categorical}
+    draft["model"]["algorithm"] = algorithm
+    with st.status("Registering the project...", expanded=True) as status:
+        st.write("Verifying the confirmed profile...")
+        final = understand.finalize_profile(draft)
+        for issue in final.get("issues", []):
             st.warning(issue)
-        del st.session_state["draft"]
+        st.write("Loading the model in the sandbox, computing the holdout baseline, calibrating CARA-T...")
+        try:
+            res = orch.setup_project({k: v for k, v in final.items() if k != "issues"})
+        except Exception as exc:
+            status.update(label="Registration failed", state="error")
+            st.error(str(exc))
+            return
+        status.update(label=f"Project '{final['project_id']}' registered", state="complete")
+    for issue in res.get("issues", []):
+        st.warning(issue)
+    st.success("Registered. Select the project in the sidebar and open Monitoring.")
+    st.session_state.pop("draft", None)
+    st.session_state.pop("scan_log", None)
 
 
+# ----------------------------------------------------------------------------- Monitoring
 def show_results(result: Dict[str, Any]) -> None:
     if result.get("status") == "BLOCKED":
-        st.error("Upload blocked: " + "; ".join(str(i) for i in result.get("issues", [])))
+        st.error("INVALID DATA — upload blocked: " + "; ".join(str(i) for i in result.get("issues", [])))
     elif result.get("status") == "DUPLICATE":
-        st.warning("This exact file was already processed.")
+        st.warning("This exact file was already processed; nothing was done.")
     else:
-        st.success(f"{result.get('batches_processed', 0)} batch(es) checked; "
-                   f"{result.get('buffer_rows', 0)} rows waiting for a full batch.")
+        st.success(f"{result.get('batches_processed', 0)} batch(es) checked. {result.get('buffer_rows', 0)} row(s) "
+                   "are waiting until a full batch has accumulated.")
         for rep in result.get("reports", []):
-            st.markdown(f"Check **{rep['report_id']}** -> :{'red' if rep['zone'] == 'RETRAIN' else 'orange' if rep['zone'] == 'HUMAN' else 'green'}"
-                        f"[{ZONE_TEXT.get(rep['zone'], rep['zone'])}] (score {rep['decision'].get('P', 0):.2f}, action {rep['action']})")
+            st.markdown(f"Check **{rep['report_id']}** &nbsp; {ui.zone_pill(rep['zone'])} &nbsp; score "
+                        f"{fmt(rep['decision'].get('P', 0) * 100, 1)} &nbsp; action: {rep['action']}", unsafe_allow_html=True)
+        if result.get("reports"):
+            st.caption("Open Analysis & Reports for the module-by-module evidence.")
 
 
-def page_monitor(project_id: str) -> None:
-    st.header("Monitor")
-    cfg = load_config(project_id)
-    profile = load_profile(project_id)
-    up, late = st.columns(2)
-    with up:
-        st.subheader("New data")
-        data_file = st.file_uploader("Data file (features, plus the target if known)", type=["csv", "parquet"], key="new")
-        labels_file = st.file_uploader("Labels for this file (optional)", type=["csv", "parquet"], key="newlab")
-        if st.button("Run check") and data_file is not None:
-            inbox = WORKSPACE / project_id / "data" / "uploads"
-            path = save_upload(data_file, inbox)
-            lab = save_upload(labels_file, inbox) if labels_file is not None else None
-            with st.spinner("Drift, staleness, quality, decision..."):
-                show_results(orch.on_new_data(project_id, path, lab))
-    with late:
-        st.subheader("Labels that arrived later")
-        pending = [r for r in load_reports(project_id)
-                   if r["decision"].get("basis") in ("estimated", "none") and "proxy_error" not in r["decision"]
-                   and r["zone"] != "BLOCKED"]
-        if pending:
-            pick = st.selectbox("Check waiting for labels", [r["report_id"] for r in pending])
-            late_file = st.file_uploader("Labels file (target column, same row order or id column)",
-                                         type=["csv", "parquet"], key="late")
-            if st.button("Attach labels") and late_file is not None:
-                rep = next(r for r in pending if r["report_id"] == pick)
-                path = save_upload(late_file, WORKSPACE / project_id / "data" / "uploads")
-                with st.spinner("Computing measured staleness and quality..."):
-                    res = orch.attach_labels(project_id, rep["batch_id"], path)
-                err = res.get("proxy_error")
-                st.success(f"Labels attached. Zone now {res['zone']}."
-                           + (f" Estimate minus measured staleness: {err:+.3f}." if err is not None else ""))
-        else:
-            st.caption("No check is waiting for labels.")
-
-    st.divider()
-    chart_slot = st.empty()
-    hist = history_frame(project_id)
-    if len(hist):
-        chart_slot.plotly_chart(timeline(hist, cfg), use_container_width=True, key="timeline")
-        st.dataframe(hist, use_container_width=True, hide_index=True)
-    else:
-        chart_slot.info("No checks yet. Upload data or run the demo below.")
-
-    st.divider()
-    st.subheader("Demo mode (simulated replay)")
-    stream = sorted((WORKSPACE / project_id / "data" / "stream").glob("batch_*.csv"))
-    if not stream:
-        st.caption("This project has no data/stream folder to replay.")
-        return
-    st.caption("Replays stored stream batches through the full loop. Drift here is SIMULATED, not real.")
-    c1, c2, c3 = st.columns(3)
-    first, last = c1.slider("Batches to replay", 0, len(stream) - 1, (min(20, len(stream) - 1), min(31, len(stream) - 1)))
-    scenario = c2.selectbox("Scenario", ["stream as stored", "labels arrive 2 batches late",
-                                         "inject covariate shift from the middle"])
-    fresh = c3.checkbox("Reset the project first", value=True)
-    if st.button("Run demo"):
-        run_demo(project_id, profile, stream[first:last + 1], scenario, fresh, chart_slot, cfg)
-
-
-def run_demo(project_id: str, profile: Dict[str, Any], files: List[Path], scenario: str, fresh: bool,
-             chart_slot: Any, cfg: Dict[str, Any]) -> None:
-    target = profile["task"]["target"]
-    tmp = WORKSPACE / project_id / "data" / "uploads"
-    tmp.mkdir(parents=True, exist_ok=True)
-    if fresh:
-        with st.spinner("Resetting the project..."):
-            orch.reset_project(project_id)
-    progress, log = st.progress(0.0), st.empty()
-    queue: List[tuple] = []
-    for i, f in enumerate(files):
-        frame = pd.read_csv(f)
-        if scenario.startswith("inject") and i >= len(files) // 2:
-            numeric = profile["features"]["numeric"]
-            frame = inject_covariate_shift(frame, {**profile, "seed": 42 + i}, numeric[0], 1.5, 0)
-        send = tmp / f"demo_{i:03d}_{f.name}"
-        if scenario.startswith("labels"):
-            labels = tmp / f"demo_labels_{i:03d}_{f.name}"
-            frame[[target]].to_csv(labels, index=False)
-            frame.drop(columns=[target]).to_csv(send, index=False)
-        else:
-            frame.to_csv(send, index=False)
-        res = orch.on_new_data(project_id, send)
-        for rep in res.get("reports", []):
-            log.write(f"{f.name}: zone {rep['zone']}, score {rep['decision'].get('P', 0):.2f}, action {rep['action']}")
-            if scenario.startswith("labels"):
-                queue.append((rep["batch_id"], labels))
-        if scenario.startswith("labels") and len(queue) > 2:
-            batch_id, labels_path = queue.pop(0)
-            late = orch.attach_labels(project_id, batch_id, labels_path)
-            log.write(f"labels arrived for an earlier batch: zone {late['zone']}")
-        hist = history_frame(project_id)
+def page_monitoring(project_id: str) -> None:
+    ui.page_title("Monitoring", "Send new data. Each full batch runs Module 2, then Modules 3 and 4, then the decision.")
+    cfg, profile = load_config(project_id), load_profile(project_id)
+    tab_upload, tab_demo, tab_timeline = st.tabs(["Upload data", "Guided demo", "Timeline"])
+    with tab_upload:
+        up, late = st.columns(2)
+        with up:
+            st.markdown("#### New incoming data")
+            data_file = st.file_uploader("Data file: feature columns, plus the target column if known",
+                                         type=["csv", "parquet"], key="new")
+            labels_file = st.file_uploader("Labels for this file (optional, same row order or id column)",
+                                           type=["csv", "parquet"], key="newlab")
+            if st.button("Run check", type="primary", disabled=data_file is None):
+                inbox = WORKSPACE / project_id / "data" / "uploads"
+                path = save_upload(data_file, inbox)
+                lab = save_upload(labels_file, inbox) if labels_file is not None else None
+                with st.status("Checking the batch...", expanded=True) as status:
+                    st.write("Schema validation, drift (Module 2), staleness (Module 3), quality (Module 4), decision...")
+                    result = orch.on_new_data(project_id, path, lab)
+                    status.update(label=f"Finished: {result.get('status')}", state="complete")
+                show_results(result)
+        with late:
+            st.markdown("#### Labels that arrived later")
+            waiting = [r for r in load_reports(project_id)
+                       if r["decision"].get("basis") in ("estimated", "none")
+                       and "proxy_error" not in r["decision"] and r["zone"] != "BLOCKED"]
+            if not waiting:
+                st.caption("No check is waiting for labels.")
+            else:
+                pick = st.selectbox("Check waiting for labels", [r["report_id"] for r in waiting])
+                late_file = st.file_uploader("Labels file", type=["csv", "parquet"], key="late")
+                if st.button("Attach labels", disabled=late_file is None):
+                    rep = next(r for r in waiting if r["report_id"] == pick)
+                    path = save_upload(late_file, WORKSPACE / project_id / "data" / "uploads")
+                    with st.spinner("Measuring staleness and quality with the labels..."):
+                        res = orch.attach_labels(project_id, rep["batch_id"], path)
+                    err = res.get("proxy_error")
+                    st.success(f"Labels attached. Zone is now {ui.ZONE_LABEL.get(res['zone'], res['zone'])}."
+                               + (f" Estimate minus measured staleness: {err:+.3f}." if err is not None else ""))
+    with tab_demo:
+        guided_demo(project_id, profile)
+    with tab_timeline:
+        hist = history_frame(load_reports(project_id))
         if len(hist):
-            chart_slot.plotly_chart(timeline(hist, cfg), use_container_width=True, key=f"tl_{i}")
-        progress.progress((i + 1) / len(files))
-    st.success("Demo finished. Open the Report page for the details of each check.")
-
-
-def evidence_cards(project_id: str, rep: Dict[str, Any]) -> None:
-    drift, cara, quality = rep["drift"], rep["cara"], rep["quality"]
-    t1, t2, t3 = st.tabs(["Drift (Module 2)", "CARA-T staleness (Module 3)", "Quality (Module 4)"])
-    with t1:
-        st.write(f"Drift share: **{drift.get('drift_share', 0):.2f}** ({drift.get('status')}). "
-                 "Drift is a warning only; it cannot trigger retraining by itself.")
-        if drift.get("per_feature"):
-            st.plotly_chart(drift_plots.drift_bar(drift), use_container_width=True)
-            st.dataframe(pd.DataFrame(drift["per_feature"]), use_container_width=True, hide_index=True)
-            batch = store.get_batch(rep["batch_id"])
-            ref_path = WORKSPACE / project_id / "data" / "train_sample.csv"
-            batch_path = orch._resolve_path(batch["file"]) if batch else None
-            if batch_path and batch_path.is_file() and ref_path.is_file():
-                ref_df, new_df = pd.read_csv(ref_path), pd.read_csv(batch_path)
-                cols = st.columns(3)
-                for col, feat in zip(cols, drift_plots.top_drifted(drift, 3)):
-                    col.plotly_chart(drift_plots.distribution_overlay(ref_df, new_df, feat["feature"], feat["type"]),
-                                     use_container_width=True)
-    with t2:
-        basis = rep["decision"].get("basis", cara.get("basis"))
-        m1, m2, m3, m4 = st.columns(4)
-        if basis == "estimated":
-            m1.metric("Estimated staleness", f"{cara.get('staleness_est', 0):.2f}")
-            m2.metric("Lower bound", f"{cara.get('staleness_est_lo', 0):.2f}")
-            st.info("Labels are pending: staleness is ESTIMATED from model confidence (CARA-T-L). "
-                    "An estimate can never trigger automatic retraining; upload labels to measure it.")
-        elif basis == "measured":
-            m1.metric("Measured staleness", f"{cara.get('staleness', 0):.2f}")
-            m2.metric("Lower bound (5%)", f"{cara.get('staleness_lo', cara.get('staleness', 0)):.2f}")
+            st.plotly_chart(ui.timeline(hist, cfg), use_container_width=True)
+            st.dataframe(hist, use_container_width=True, hide_index=True)
         else:
-            st.info("Staleness is not available for this check (awaiting labels).")
-        m3.metric("Threshold tau*", f"{cara.get('tau_star', 0):.2f}")
-        m4.metric("Retraining cost kappa", f"{cara.get('kappa', 0):.2f}")
-        if rep["decision"].get("proxy_error") is not None:
-            before = rep["decision"].get("estimated_before_labels", {})
-            st.write(f"Before labels arrived the estimate was {before.get('staleness_est', float('nan')):.2f}; "
-                     f"estimate minus measured = {rep['decision']['proxy_error']:+.2f}.")
-    with t3:
-        if quality.get("table"):
-            st.write(f"z versus baseline: **{quality.get('z_m', 0):.2f}** "
-                     f"({'degraded' if quality.get('degraded') else 'not degraded'}; n = {quality.get('n')})")
-            st.dataframe(pd.DataFrame(quality["table"]).round(4), use_container_width=True, hide_index=True)
-            if quality.get("confusion_matrix"):
-                st.write("Confusion matrix (rows = actual, columns = predicted)")
-                st.dataframe(pd.DataFrame(quality["confusion_matrix"], index=quality.get("labels"),
-                                          columns=quality.get("labels")))
-        else:
-            st.info(quality.get("note") or "Quality is pending: no labels for this batch yet.")
+            st.info("No checks yet.")
 
 
-def page_report(project_id: str) -> None:
-    st.header("Report")
+def guided_demo(project_id: str, profile: Dict[str, Any]) -> None:
+    if not demo_mod.stream_files(project_id):
+        st.info("The guided demo needs a `data/stream` folder. Select the demo project.")
+        return
+    ui.simulated_banner()
+    st.write("")
+    key = f"demo_{project_id}"
+    state = st.session_state.setdefault(key, {"next": 0, "results": {}})
+    c1, c2, c3 = st.columns([2, 2, 5])
+    done = state["next"] >= len(demo_mod.DEMO_STEPS)
+    if c1.button("Run next step", type="primary", disabled=done):
+        index = state["next"]
+        with st.status(demo_mod.DEMO_STEPS[index]["title"], expanded=True) as status:
+            st.write(demo_mod.DEMO_STEPS[index]["what"])
+            state["results"][index] = demo_mod.run_demo_step(project_id, index, profile)
+            status.update(state="complete")
+        state["next"] = index + 1
+    if c2.button("Restart demo"):
+        st.session_state[key] = {"next": 0, "results": {}}
+        st.rerun()
+    c3.progress(min(state["next"], len(demo_mod.DEMO_STEPS)) / len(demo_mod.DEMO_STEPS),
+                text=f"{state['next']} of {len(demo_mod.DEMO_STEPS)} steps done")
+    for index, step in enumerate(demo_mod.DEMO_STEPS):
+        ran = index in state["results"]
+        with st.expander(("✓ " if ran else "") + step["title"], expanded=ran or index == state["next"]):
+            st.write(step["what"])
+            if ran:
+                frame = pd.DataFrame(state["results"][index])
+                st.dataframe(frame, use_container_width=True, hide_index=True)
+                promoted = [r for r in state["results"][index] if r.get("action") == "PROMOTED"]
+                if promoted:
+                    active = store.get_active_version(project_id)
+                    st.success(f"Candidate verified and promoted. Active model version is now {active['version']}.")
+    reports = load_reports(project_id)
+    hist = history_frame(reports)
+    if state["results"] and len(hist):
+        st.plotly_chart(ui.timeline(hist, load_config(project_id)), use_container_width=True)
+    if done:
+        st.success("Demo finished. Open Analysis & Reports to walk through any check, or Retraining History for versions.")
+
+
+# ----------------------------------------------------------------------------- Analysis & Reports
+def module2_panel(project_id: str, rep: Dict[str, Any], hist: pd.DataFrame) -> None:
+    drift = rep["drift"]
+    status = "INVALID DATA" if rep["zone"] == "BLOCKED" else "DRIFT DETECTED" if drift.get("status") == "DRIFT" else "STABLE"
+    tone = "idle" if status == "INVALID DATA" else "warn" if status == "DRIFT DETECTED" else "good"
+    st.markdown(f"#### Module 2 — Data drift &nbsp; {ui.pill(status, tone)}", unsafe_allow_html=True)
+    st.caption("Question: does the incoming data look different from the reference data? Drift is an early "
+               "warning. It can never trigger retraining on its own.")
+    if rep["zone"] == "BLOCKED":
+        for issue in drift.get("issues", []):
+            st.error(issue)
+        st.write("Fix the file and upload it again. Nothing else was computed for this upload.")
+        return
+    feats = drift.get("per_feature", [])
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        ui.card("Drift share d", fmt(drift.get("drift_share"), 2), "flagged features / all features", tone)
+    with c2:
+        ui.card("Features flagged", f"{sum(1 for f in feats if f.get('flag'))} / {len(feats)}",
+                "PSI ≥ 0.2 (categorical); KS p < 0.01 and statistic ≥ 0.1 (numeric)")
+    with c3:
+        ui.card("Rows compared", f"{drift.get('n_new', 0):,}", f"against {drift.get('n_ref', 0):,} reference rows")
+    st.write("")
+    schema = drift.get("schema") or {}
+    checks = [{"title": "Schema validation", "detail": "all feature columns present; numeric columns can be cast", "state": "done"},
+              {"title": "Unseen categories",
+               "detail": "; ".join(f"{k}: {', '.join(map(str, v[:5]))}" for k, v in schema.get("unseen_categories", {}).items()) or "none",
+               "state": "fail" if schema.get("unseen_categories") else "done"},
+              {"title": "Values outside the reference 1st-99th percentile",
+               "detail": "; ".join(f"{k}: {v} rows" for k, v in schema.get("out_of_range", {}).items()) or "none reported",
+               "state": "done"}]
+    with st.expander("Validation checks on this upload"):
+        ui.steps(checks)
+    if not feats:
+        return
+    left, right = st.columns([3, 2])
+    left.plotly_chart(drift_plots.drift_bar(drift), use_container_width=True)
+    right.dataframe(pd.DataFrame(feats).round(4), use_container_width=True, hide_index=True)
+    batch = store.get_batch(rep["batch_id"])
+    ref_path = WORKSPACE / project_id / "data" / "train_sample.csv"
+    batch_path = orch._resolve_path(batch["file"]) if batch else None
+    if batch_path and batch_path.is_file() and ref_path.is_file():
+        st.markdown("**Top three features: reference versus incoming**")
+        ref_df, new_df = pd.read_csv(ref_path), pd.read_csv(batch_path)
+        for col, feat in zip(st.columns(3), drift_plots.top_drifted(drift, 3)):
+            col.plotly_chart(drift_plots.distribution_overlay(ref_df, new_df, feat["feature"], feat["type"]),
+                             use_container_width=True)
+        st.caption("The reference shown is the stored 2,000-row sample of the active model's training data.")
+    if len(hist):
+        st.bar_chart(hist.set_index("check")["drift_share"], height=180)
+        st.caption("Drift share over all checks.")
+
+
+def module3_panel(rep: Dict[str, Any], hist: pd.DataFrame) -> None:
+    cara, basis = rep["cara"], rep["decision"].get("basis", rep["cara"].get("basis", "none"))
+    status = {"measured": cara.get("decision", "KEEP"), "estimated": "ESTIMATED", "none": "PENDING"}.get(basis, "PENDING")
+    tone = {"RETRAIN": "bad", "KEEP": "good", "ESTIMATED": "warn", "PENDING": "idle"}[status]
+    st.markdown(f"#### Module 3 — CARA-T staleness &nbsp; {ui.pill('CARA-T: ' + status, tone)}", unsafe_allow_html=True)
+    st.caption("Question: has the model gone stale for the kind of inputs it is being asked about now?")
+    with st.expander("How CARA-T works, in four lines", expanded=False):
+        st.markdown(
+            "1. Take the rows of the new batch as **queries** and its labelled rows as **data points**.\n"
+            "2. For every query, average the model's 0-1 loss over the data points, weighting each point by an "
+            "**RBF similarity** `exp(-gamma * distance²)`: errors near the query count more.\n"
+            "3. Do the same with the **same queries** against a sample of the model's own training data, and subtract. "
+            "The difference is the **relative staleness**.\n"
+            "4. Compare it with **tau\\***, the threshold that gave the lowest total cost (staleness + retraining "
+            "cost kappa) when replayed on historical batches at setup.")
+        st.latex(r"\overline{\Psi} = \Psi(Q_{new}, D_{new}, M) - \Psi(Q_{new}, D_{train}, M)\qquad "
+                 r"\text{RETRAIN if } \overline{\Psi} \ge \tau^*")
+    if basis == "none":
+        st.info("PENDING — this batch has no (or too few) labels and no label-free estimate is available. "
+                "No staleness value is shown because none was computed.")
+    c = st.columns(5)
+    if basis == "measured":
+        with c[0]:
+            ui.card("Staleness", fmt(cara.get("staleness"), 2), "measured with labels",
+                    "bad" if cara.get("decision") == "RETRAIN" else "good")
+        with c[1]:
+            ui.card("Lower bound (5%)", fmt(cara.get("staleness_lo", cara.get("staleness")), 2), "used by the decision score")
+    elif basis == "estimated":
+        with c[0]:
+            ui.card("Estimated staleness", fmt(cara.get("staleness_est"), 2), "from model confidence (CARA-T-L)", "warn")
+        with c[1]:
+            ui.card("Lower bound", fmt(cara.get("staleness_est_lo"), 2), "estimate minus offline error margin")
+    else:
+        with c[0]:
+            ui.card("Staleness", "PENDING", "awaiting labels", "idle")
+        with c[1]:
+            ui.card("Lower bound", "n/a", "")
+    with c[2]:
+        ui.card("Threshold tau*", fmt(cara.get("tau_star"), 2), "calibrated offline")
+    with c[3]:
+        ui.card("Retraining cost kappa", fmt(cara.get("kappa"), 2), "same units as staleness")
+    with c[4]:
+        ui.card("Samples used", f"{cara.get('n_points', 0):,}", f"data points; {cara.get('n_queries', 0)} queries")
+    if basis == "measured" and cara.get("psi_current") is not None:
+        st.caption(f"Kernel-weighted loss on the new batch: {cara['psi_current']:.2f}; on the training sample with "
+                   f"the same queries: {cara['psi_reference']:.2f}; difference = relative staleness.")
+    if basis == "estimated":
+        st.warning("Labels are pending. This value is an ESTIMATE and can only send the check to human review; "
+                   "it never triggers automatic retraining. A pure concept shift is invisible to it. Upload labels to measure.")
+    if rep["decision"].get("proxy_error") is not None:
+        before = rep["decision"].get("estimated_before_labels", {})
+        st.caption(f"Before labels arrived the estimate was {fmt(before.get('staleness_est'), 2)}; "
+                   f"estimate minus measured = {rep['decision']['proxy_error']:+.2f}.")
+    if len(hist):
+        st.plotly_chart(ui.staleness_chart(hist, rep["report_id"]), use_container_width=True)
+
+
+def module4_panel(rep: Dict[str, Any], hist: pd.DataFrame) -> None:
+    quality = rep["quality"]
+    state = quality.get("status", "PENDING")
+    label = {"OK": "DEGRADED" if quality.get("degraded") else "NOT DEGRADED", "NO_BASELINE": "NO BASELINE"}.get(state, "PENDING")
+    tone = {"DEGRADED": "bad", "NOT DEGRADED": "good", "NO BASELINE": "warn", "PENDING": "idle"}[label]
+    st.markdown(f"#### Module 4 — Model quality &nbsp; {ui.pill(label, tone)}", unsafe_allow_html=True)
+    st.caption("Question: are the model's predictions measurably worse than on the holdout it was accepted with?")
+    if state not in ("OK", "NO_BASELINE"):
+        st.info("PENDING — quality needs true labels. No metric was computed for this batch.")
+        return
+    primary = quality.get("primary_metric")
+    row = next((r for r in quality.get("table", []) if r["metric"] == primary), None)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        ui.card(f"Current {primary}", fmt(quality["metrics"].get(primary, {}).get("value")),
+                f"± {fmt(quality['metrics'].get(primary, {}).get('se'))} bootstrap SE")
+    with c2:
+        ui.card("Baseline (holdout)", fmt(row["reference"]) if row else "n/a", "never-seen data")
+    with c3:
+        ui.card("Degradation z", fmt(quality.get("z_m"), 2), "≥ 1.64 counts as degraded", tone)
+    with c4:
+        ui.card("Labelled rows", f"{quality.get('n', 0):,}", f"coverage {fmt(quality.get('label_coverage'), 2)}")
+    st.write("")
+    if state == "NO_BASELINE":
+        st.warning(quality.get("note", "No holdout baseline; the quality comparison is switched off."))
+    st.caption("Metrics come from a fixed registry: " + ", ".join(
+        f"{name} ({REGISTRY[name]['description']})" for name in list(quality.get("metrics", {}))[:4] if REGISTRY[name]["description"]) + ".")
+    left, right = st.columns(2)
+    if quality.get("table"):
+        left.plotly_chart(ui.metric_bars(quality["table"]), use_container_width=True)
+    if quality.get("confusion_matrix"):
+        right.plotly_chart(ui.confusion_heatmap(quality["confusion_matrix"], quality.get("labels") or []), use_container_width=True)
+    curves = quality.get("curves") or {}
+    if curves.get("roc"):
+        c5, c6 = st.columns(2)
+        c5.plotly_chart(ui.curve_chart(curves["roc"], "ROC curve", "false positive rate", "true positive rate", True), use_container_width=True)
+        c6.plotly_chart(ui.curve_chart(curves["pr"], "Precision-recall curve", "recall", "precision", False), use_container_width=True)
+    if quality.get("per_class_recall"):
+        st.markdown("**Per-class recall**")
+        st.dataframe(pd.DataFrame([quality["per_class_recall"]]).round(4), use_container_width=True, hide_index=True)
+    metric_rows = [{"metric": k, "value": v["value"], "bootstrap_se": v["se"]} for k, v in quality.get("metrics", {}).items()]
+    st.dataframe(pd.DataFrame(metric_rows).round(4), use_container_width=True, hide_index=True)
+    series = hist.dropna(subset=["primary_metric"]) if len(hist) else hist
+    if len(series):
+        st.line_chart(series.set_index("check")["primary_metric"], height=180)
+        st.caption(f"{primary} over all labelled checks.")
+
+
+def decision_panel(project_id: str, rep: Dict[str, Any], cfg: Dict[str, Any]) -> None:
+    dec, zone = rep["decision"], rep["zone"]
+    st.markdown(f"#### Decision engine &nbsp; {ui.zone_pill(zone)}", unsafe_allow_html=True)
+    meaning = {"RETRAIN": "Automatic retraining is permitted, subject to cooldown and verification.",
+               "HUMAN": "The evidence is insufficient or incomplete. Your decision is required.",
+               "KEEP": "Continue using the existing model."}.get(zone, "")
+    st.caption(meaning)
+    if "P" not in dec:
+        st.info("No decision score for this upload.")
+        return
+    left, right = st.columns([1, 1])
+    with left:
+        st.plotly_chart(ui.gauge(dec["P"], cfg), use_container_width=True)
+        st.caption("A decision score, not a calibrated probability.")
+    with right:
+        st.latex(r"z_c=\frac{\text{staleness}-\tau^*}{s}\qquad z_m=\text{quality degradation}")
+        st.latex(r"P=\sigma(b+a_1 z_c+a_2 z_m+a_3 d)")
+        st.markdown(f"`b = {cfg['b']}`, `a1 = {cfg['a1']}`, `a2 = {cfg['a2']}`, `a3 = {cfg['a3']}`; "
+                    f"retrain at `P ≥ {cfg['retrain_limit']}`, keep at `P ≤ {cfg['keep_limit']}`; "
+                    f"z values are clipped to ±{cfg['z_clip']}.")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("z_c (staleness)", fmt(dec.get("zc"), 2))
+        c2.metric("z_m (quality)", fmt(dec.get("zm"), 2))
+        c3.metric("d (drift share)", fmt(dec.get("d"), 2))
+        if dec.get("terms"):
+            st.plotly_chart(ui.contribution_bars(dec["terms"]), use_container_width=True)
+    notes = [dec.get("reason", "")] + [f"flag: {f}" for f in dec.get("flags", [])]
+    if dec.get("alert"):
+        notes.append(f"alert: {dec['alert']}")
+    st.markdown("**Evidence:** " + " · ".join(n for n in notes if n))
+    st.caption("Rules that always hold: missing labels force HUMAN REVIEW; an estimate never triggers RETRAIN; "
+               "drift alone cannot reach the retrain line; after a promotion there is a cooldown.")
+    st.divider()
+    st.markdown("#### What if?")
+    w1, w2, w3 = st.columns(3)
+    mult = w1.slider("Retraining-cost (kappa) multiplier", 0.25, 4.0, 1.0, 0.25,
+                     help="Higher cost raises tau*, so more staleness is tolerated.")
+    limit = w2.slider("Automatic-retrain limit", 0.55, 0.90, float(cfg["retrain_limit"]), 0.05)
+    keep = w3.slider("Keep limit", 0.10, 0.45, float(cfg["keep_limit"]), 0.05)
+    res = default_tools(project_id)["what_if"]({"kappa_multiplier": mult, "retrain_limit": limit, "keep_limit": keep},
+                                               rep["report_id"])
+    if res:
+        st.markdown(f"With these settings: score **{res['P'] * 100:.1f}** → {ui.zone_pill(res['zone'])} "
+                    f"(stored decision: {ui.zone_pill(zone)}). Nothing is saved; this only recomputes the formula.",
+                    unsafe_allow_html=True)
+
+
+def retrain_pipeline(rep: Dict[str, Any], profile: Dict[str, Any]) -> None:
+    info = rep["decision"].get("retrain")
+    if not info:
+        st.info("No retraining was attempted for this check.")
+        return
+    verify = info.get("verify") or {}
+    status = info.get("status")
+    if status == "INSUFFICIENT_DATA":
+        st.warning(f"Retraining was refused: {info.get('reason')}")
+        return
+    passed, waived = bool(verify.get("verified")), verify.get("holdout_gate") == "waived"
+    promoted = status == "PROMOTED"
+    window = profile.get("W", 1)
+    items = [
+        {"title": "Select recent labelled batches", "detail": f"the last W = {window} labelled batch(es)", "state": "done"},
+        {"title": "Split verification data", "detail": "the newest 20% of the newest batch is held out", "state": "done"},
+        {"title": "Clone the existing sklearn pipeline", "detail": "same steps and hyper-parameters, fresh weights", "state": "done"},
+        {"title": "Train the candidate in the sandbox worker", "detail": f"{fmt(info.get('seconds'), 2)} s", "state": "done"},
+        {"title": "Evaluate the candidate on the verification slice",
+         "detail": f"accuracy {fmt(verify.get('candidate_v_accuracy'))}; {profile.get('primary_metric')} {fmt(verify.get('candidate_v'))}", "state": "done"},
+        {"title": "Compare against the champion",
+         "detail": f"champion accuracy {fmt(verify.get('champion_v_accuracy'))}; gain {fmt(verify.get('gain'))}, "
+                   f"5% lower bound {fmt(verify.get('gain_lb'))}",
+         "state": "done" if (verify.get("gain_lb") or 0) >= 0 else "fail"},
+        {"title": "Evaluate against the reference holdout",
+         "detail": "waived: the champion itself has degraded on current data, so the old holdout is out of date"
+                   if waived else f"drop {fmt(verify.get('holdout_drop'))} (tolerance 0.02)",
+         "state": "skip" if waived else "done" if (verify.get("holdout_drop") or 0) <= 0.02 else "fail"},
+        {"title": "Approve or reject", "detail": "; ".join(verify.get("reasons", [])) or "all gates passed",
+         "state": "done" if passed else "fail"},
+        {"title": "Promote the candidate", "detail": f"version {info.get('version')}" if promoted else "not promoted; the champion stays",
+         "state": "done" if promoted else "skip"},
+        {"title": "Update the active model version", "detail": "atomic file replace; previous version kept for rollback" if promoted else "",
+         "state": "done" if promoted else "skip"},
+        {"title": "Recalibrate CARA-T", "detail": "; ".join(info.get("warnings") or []) or ("tau* and kappa recomputed for the new model" if promoted else ""),
+         "state": "done" if promoted else "skip"},
+    ]
+    st.markdown(f"Result: {ui.pill(status.replace('_', ' '), 'good' if promoted else 'warn')}", unsafe_allow_html=True)
+    ui.steps(items)
+
+
+def page_analysis(project_id: str) -> None:
+    ui.page_title("Analysis & Reports", "One check at a time, module by module, ending in the decision.")
     reports = load_reports(project_id)
     if not reports:
-        st.info("No checks yet.")
+        st.info("No checks yet. Upload data or run the guided demo in Monitoring.")
         return
-    cfg = load_config(project_id)
+    cfg, profile, hist = load_config(project_id), load_profile(project_id), history_frame(reports)
     ids = [r["report_id"] for r in reports]
-    rid = st.selectbox("Check", ids, index=len(ids) - 1)
+    top = st.columns([2, 5])
+    rid = top[0].selectbox("Check", ids, index=len(ids) - 1,
+                           format_func=lambda i: f"Check {i} — {next(r['zone'] for r in reports if r['report_id'] == i)}")
     rep = next(r for r in reports if r["report_id"] == rid)
-    acts = decisions_by_report(project_id).get(rid, [])
-    rep["action"] = acts[-1]["action"] if acts else None
-    zone, dec = rep["zone"], rep["decision"]
-    left, right = st.columns([1, 2])
-    with left:
-        st.markdown(f"<div style='padding:14px;border-radius:8px;background:{ZONE_COLOR.get(zone, '#555')};"
-                    f"color:white;font-size:22px;text-align:center'><b>{ZONE_TEXT.get(zone, zone)}</b></div>",
+    top[1].markdown(f"<div style='padding-top:30px'>{ui.zone_pill(rep['zone'])} &nbsp; "
+                    + " ".join(ui.pill(f"{d['action']} · {d['by']}", "idle") for d in rep["decisions"]) + "</div>",
                     unsafe_allow_html=True)
-        if "P" in dec:
-            st.plotly_chart(gauge(dec["P"], cfg), use_container_width=True)
-        if dec.get("alert"):
-            st.warning(f"Alert: {dec['alert']}")
-    with right:
-        st.subheader("Summary")
+    tabs = st.tabs(["Summary", "① Drift", "② Staleness", "③ Quality", "④ Decision", "⑤ Retraining"])
+    with tabs[0]:
         key = f"ai_{rid}"
         st.text(st.session_state.get(key, {}).get("text") or template_summary(rep))
-        if st.button("Write AI summary (numbers are checked against the report)"):
-            st.session_state[key] = summarize_with_meta(rep)
+        c1, c2 = st.columns([2, 5])
+        if c1.button("Write AI summary"):
+            with st.spinner("Asking the LLM and checking its numbers against the report..."):
+                st.session_state[key] = summarize_with_meta(rep)
             st.rerun()
-        if key in st.session_state:
-            st.caption(f"Source: {st.session_state[key]['source']}")
-        if acts:
-            st.caption("Recorded: " + " | ".join(f"{a['action']} by {a['by']}" for a in acts))
-        if dec.get("retrain", {}).get("verify"):
-            v = dec["retrain"]["verify"]
-            st.write(f"Candidate {dec['retrain'].get('version')}: accuracy gain on the newest slice "
-                     f"{v.get('gain', 0):+.3f} (lower bound {v.get('gain_lb', 0):+.3f}); holdout gate "
-                     f"{v.get('holdout_gate', 'applied')}; result **{dec['retrain']['status']}**.")
-            for reason in v.get("reasons", []):
-                st.caption(f"- {reason}")
-    if zone == "BLOCKED":
-        st.error("; ".join(rep["drift"].get("issues", [])))
+        c2.caption(f"Source: {st.session_state[key]['source']}" if key in st.session_state else
+                   "Template summary. The AI summary is used only if every number in it matches the report.")
+        if rep["zone"] != "BLOCKED":
+            st.markdown("#### Your decision")
+            b1, b2, b3 = st.columns([1, 1, 4])
+            force = b3.checkbox("Promote even if verification fails")
+            if b1.button("Retrain"):
+                with st.spinner("Training a candidate and verifying it..."):
+                    out = orch.resolve_human(project_id, rid, "RETRAIN", force=force)
+                st.write(f"Result: **{out['action']}**")
+            if b2.button("Keep"):
+                orch.resolve_human(project_id, rid, "KEEP")
+                st.write("Recorded: KEEP for this batch.")
+        st.download_button("Download this report (Markdown)", report_markdown(project_id, rep),
+                           file_name=f"{project_id}_check_{rid}.md")
+    with tabs[1]:
+        module2_panel(project_id, rep, hist)
+    if rep["zone"] == "BLOCKED":
+        for tab in tabs[2:]:
+            tab.info("Not computed: the upload was blocked at schema validation.")
         return
-    evidence_cards(project_id, rep)
-
-    st.divider()
-    w1, w2 = st.columns(2)
-    with w1:
-        st.subheader("What would change this decision?")
-        mult = st.slider("Retraining-cost (kappa) multiplier", 0.25, 4.0, 1.0, 0.25)
-        limit = st.slider("Automatic-retrain limit", 0.55, 0.90, float(cfg["retrain_limit"]), 0.05)
-        res = default_tools(project_id)["what_if"](
-            {"kappa_multiplier": mult, "retrain_limit": limit, "keep_limit": round(1 - limit, 2)}, rid)
-        if res:
-            st.write(f"Score **{res['P']:.2f}** -> zone **{res['zone']}** (stored: {zone}).")
-    with w2:
-        st.subheader("Your decision")
-        b1, b2, b3 = st.columns(3)
-        force = st.checkbox("Promote even if verification fails (needs a reason you can defend)")
-        if b1.button("Retrain"):
-            with st.spinner("Training a candidate and verifying it..."):
-                out = orch.resolve_human(project_id, rid, "RETRAIN", force=force)
-            st.write(f"Result: **{out['action']}**")
-        if b2.button("Keep"):
-            orch.resolve_human(project_id, rid, "KEEP")
-            st.write("Recorded: KEEP for this batch.")
-        if b3.button("Rollback"):
-            try:
-                out = orch.rollback(project_id)
-                st.write(f"Rolled back. Active version: {out.get('active_version')}")
-            except Exception as exc:
-                st.error(str(exc))
-    st.subheader("Model versions")
-    st.dataframe(pd.DataFrame(store.get_versions(project_id))[["version", "status", "trained_on", "created_at"]],
-                 use_container_width=True, hide_index=True)
-    st.download_button("Download this report (Markdown)", report_markdown(project_id, rep),
-                       file_name=f"{project_id}_check_{rid}.md")
+    with tabs[2]:
+        module3_panel(rep, hist)
+    with tabs[3]:
+        module4_panel(rep, hist)
+    with tabs[4]:
+        decision_panel(project_id, rep, cfg)
+    with tabs[5]:
+        st.markdown("#### Retraining and verification")
+        st.caption("A candidate replaces the current model only if it passes verification. A failed candidate is never promoted automatically.")
+        retrain_pipeline(rep, profile)
 
 
 def report_markdown(project_id: str, rep: Dict[str, Any]) -> str:
@@ -489,14 +768,70 @@ def report_markdown(project_id: str, rep: Dict[str, Any]) -> str:
         lines += ["## Quality versus baseline", "", pd.DataFrame(rep["quality"]["table"]).round(4).to_csv(index=False, sep="|"), ""]
     keys = ("staleness", "staleness_lo", "staleness_est", "staleness_est_lo", "tau_star", "kappa", "s", "basis", "decision")
     lines += ["## CARA-T", "", json.dumps({k: rep["cara"].get(k) for k in keys}, indent=2), "",
-              "## Decision score", "", json.dumps({k: v for k, v in rep["decision"].items() if k != "retrain"}, indent=2, default=str)]
+              "## Decision score", "", json.dumps(rep["decision"], indent=2, default=str)]
     return "\n".join(lines)
 
 
-def page_chat(project_id: str) -> None:
-    st.header("Chat")
-    st.caption("Answers come only from the stored reports. Try: 'why this decision?', 'which features drifted?', "
-               "'show the history', 'what if kappa is 2?', 'which versions exist?'")
+# ----------------------------------------------------------------------------- Retraining History
+def page_history(project_id: str) -> None:
+    ui.page_title("Retraining History", "Every candidate that was trained, what verification said, and the version in use.")
+    versions = store.get_versions(project_id)
+    active = store.get_active_version(project_id)
+    attempts = []
+    for rep in load_reports(project_id):
+        info = rep["decision"].get("retrain")
+        if info and info.get("version"):
+            v = info.get("verify") or {}
+            attempts.append({"check": rep["report_id"], "version": info["version"], "result": info["status"],
+                             "trigger": info.get("trigger", "automatic"),
+                             "training_seconds": info.get("seconds"), "candidate_accuracy": v.get("candidate_v_accuracy"),
+                             "champion_accuracy": v.get("champion_v_accuracy"), "gain": v.get("gain"),
+                             "gain_lower_bound": v.get("gain_lb"), "holdout_gate": v.get("holdout_gate"),
+                             "reasons": "; ".join(v.get("reasons", []))})
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        ui.card("Active version", active["version"] if active else "n/a", "serving now", "info")
+    with c2:
+        ui.card("Versions registered", str(len(versions)), "including rejected candidates")
+    with c3:
+        ui.card("Promotions", str(sum(1 for a in attempts if a["result"] == "PROMOTED")), "passed verification", "good")
+    with c4:
+        ui.card("Rejected candidates", str(sum(1 for a in attempts if a["result"] == "VERIFY_FAILED")), "champion kept", "warn")
+    st.write("")
+    st.markdown("#### Model versions")
+    frame = pd.DataFrame(versions)
+    if len(frame):
+        st.dataframe(frame[["version", "status", "trained_on", "created_at"]], use_container_width=True, hide_index=True)
+    st.markdown("#### Retraining attempts")
+    if attempts:
+        st.dataframe(pd.DataFrame(attempts).round(4), use_container_width=True, hide_index=True)
+        st.caption("Automatic, late-label and human-requested attempts. Open the check in Analysis & Reports → ⑤ Retraining for the full pipeline.")
+    else:
+        st.caption("No candidate has been trained yet.")
+    st.markdown("#### Rollback")
+    state_path = WORKSPACE / project_id / "state.json"
+    previous = json.loads(state_path.read_text(encoding="utf-8")).get("previous_version") if state_path.is_file() else None
+    if previous:
+        st.write(f"Restores **{previous}** together with its calibration, baseline and drift reference.")
+        if st.button(f"Roll back to {previous}"):
+            try:
+                out = orch.rollback(project_id)
+                st.success(f"Rolled back. Active version: {out.get('active_version')}")
+            except Exception as exc:
+                st.error(str(exc))
+    else:
+        st.caption("No previous version to roll back to.")
+
+
+# ----------------------------------------------------------------------------- AI Assistant
+def page_assistant(project_id: str) -> None:
+    ui.page_title("AI Assistant", "Ask about this project. Answers come only from the stored reports.")
+    llm_on = get_client() is not None
+    st.markdown(ui.pill("LLM CONNECTED", "good") if llm_on else ui.pill("NO LLM — RULE-BASED ANSWERS", "idle"),
+                unsafe_allow_html=True)
+    st.caption("Try: “why this decision?”, “which features drifted?”, “show the history”, “what if kappa is 2?”, "
+               "“which versions exist?”. With an LLM, every number in its answer is checked against the reports; "
+               "an answer that fails the check is replaced by the rule-based one.")
     log = st.session_state.setdefault(f"chat_{project_id}", [])
     for role, text in log:
         st.chat_message(role).write(text)
@@ -505,30 +840,62 @@ def page_chat(project_id: str) -> None:
         st.chat_message("user").write(question)
         res = chat_fn(question, project_id)
         st.chat_message("assistant").write(res["answer"])
-        st.caption(f"mode: {res['mode']}; sources: {', '.join(res.get('sources', []))}")
+        st.caption(f"mode: {res['mode']} · sources: {', '.join(res.get('sources', []))}")
         log.extend([("user", question), ("assistant", res["answer"])])
 
 
+# ----------------------------------------------------------------------------- Documentation
+def page_docs() -> None:
+    ui.page_title("Documentation", "How the system works and how to use it.")
+    docs_dir = ROOT_DIR / "docs"
+    tab_guides, tab_docs = st.tabs(["Visual guides", "Written documentation"])
+    with tab_guides:
+        found = [m for m in MANUALS if (docs_dir / "manual" / m).is_file()]
+        if not found:
+            st.info("The PNG guides are expected in docs/manual/.")
+        else:
+            name = st.selectbox("Guide", found, format_func=lambda m: m.replace("ReTrainIQ_", "").replace(".png", "").replace("_", " "))
+            st.image(str(docs_dir / "manual" / name), use_container_width=True)
+    with tab_docs:
+        available = {title: f for title, f in DOCS.items() if (docs_dir / f).is_file()}
+        if not available:
+            st.info("The Markdown documents are expected in docs/.")
+        else:
+            title = st.selectbox("Document", list(available))
+            st.markdown((docs_dir / available[title]).read_text(encoding="utf-8"))
+
+
+# ----------------------------------------------------------------------------- shell
 def main() -> None:
-    st.set_page_config(page_title="ReTrainIQ", layout="wide")
+    st.set_page_config(page_title="ReTrainIQ", page_icon="🔁", layout="wide")
+    ui.inject_theme()
     store.init_db()
-    st.sidebar.title("ReTrainIQ")
-    st.sidebar.caption("AI-based retraining advisor")
+    st.sidebar.markdown("<p class='rq-brand'>ReTrain<span>IQ</span></p><p class='rq-sub'>ML retraining advisor</p>",
+                        unsafe_allow_html=True)
     projects = list_projects()
     project_id = st.sidebar.selectbox("Project", projects) if projects else None
-    page = st.sidebar.radio("Page", ["Setup", "Monitor", "Report", "Chat"])
-    st.sidebar.caption("Python computes every number and the decision score. The LLM only drafts the "
-                       "profile, proposes metrics and explains. Replays are simulations.")
-    if page == "Setup" or project_id is None:
+    page = st.sidebar.radio("Navigate", PAGES)
+    if is_set_up(project_id):
+        active = store.get_active_version(project_id)
+        st.sidebar.markdown(f"Active model **{active['version']}**")
+    st.sidebar.caption("Python computes every number and the decision score. The LLM only drafts the profile, "
+                       "proposes metric names and writes explanations.")
+    if page == "Overview":
+        page_overview(project_id)
+    elif page == "Project Setup":
         page_setup(project_id)
+    elif page == "Documentation":
+        page_docs()
     elif not is_set_up(project_id):
-        st.warning("This project is not set up yet. Open the Setup page.")
-    elif page == "Monitor":
-        page_monitor(project_id)
-    elif page == "Report":
-        page_report(project_id)
+        st.warning("This section needs a registered project. Open Project Setup first.")
+    elif page == "Monitoring":
+        page_monitoring(project_id)
+    elif page == "Analysis & Reports":
+        page_analysis(project_id)
+    elif page == "Retraining History":
+        page_history(project_id)
     else:
-        page_chat(project_id)
+        page_assistant(project_id)
 
 
 if __name__ == "__main__":
