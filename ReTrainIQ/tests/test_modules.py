@@ -241,12 +241,57 @@ def test_parse_interval():
         18000, 86400, 604800, 90)
 
 
-def test_frontend_renders_without_errors():
+def test_frontend_renders_every_section_without_errors():
     from streamlit.testing.v1 import AppTest
 
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "frontend" / "app.py"), default_timeout=120)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "frontend" / "app.py"), default_timeout=180)
     app.run()
     assert not app.exception
-    for page in ("Monitor", "Report", "Chat"):
+    for page in ("Project Setup", "Monitoring", "Analysis & Reports", "Retraining History",
+                 "AI Assistant", "Documentation", "Overview"):
         app.sidebar.radio[0].set_value(page).run()
-        assert not app.exception, page
+        assert not app.exception, f"{page}: {[e.value for e in app.exception]}"
+
+
+def test_guided_demo_steps_are_well_formed():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "frontend"))
+    import demo as demo_mod
+
+    assert [s["key"] for s in demo_mod.DEMO_STEPS] == ["register", "stable", "covariate", "concept", "after"]
+    assert all("simulated" in s["title"].lower() for s in demo_mod.DEMO_STEPS if s["key"] in ("covariate", "concept"))
+    n_stream = len(demo_mod.stream_files("demo"))
+    assert all(b < n_stream for s in demo_mod.DEMO_STEPS for b in s["batches"])
+
+
+def test_unlabelled_evidence_is_pending_not_invented(demo):
+    """Without labels: quality is PENDING with no metric values, and measured staleness is PENDING."""
+    path, prof = demo["profile"]["model"]["artifact"], demo["profile"]
+    unlabelled = demo["stable"].drop(columns=["delayed"])
+    quality = metrics.run_metrics(path, unlabelled, prof, metrics.default_plan(prof))
+    assert quality["status"] == "PENDING" and quality["metrics"] == {} and quality["table"] == []
+    measured = cara.online_staleness(path, unlabelled, demo["train"], demo["calib"], prof)
+    assert measured["status"] == "PENDING" and measured["basis"] == "none"
+    res = decision.decide({"status": "STABLE", "drift_share": 1.0}, measured, quality)
+    assert res["zone"] == "HUMAN" and res["reason"] == "awaiting labels"  # drift alone never retrains
+
+
+def test_no_secrets_in_tracked_files():
+    root = Path(__file__).resolve().parents[1]
+    ignore = (root / ".gitignore").read_text(encoding="utf-8")
+    assert ".env" in ignore and "workspace/" in ignore
+    example = (root / ".env.example").read_text(encoding="utf-8")
+    assert all(line.split("=", 1)[1].strip() == "" for line in example.splitlines()
+               if line and not line.startswith("#") and "=" in line)
+
+
+def test_documentation_assets_exist():
+    docs = Path(__file__).resolve().parents[1] / "docs"
+    for name in ("API_REFERENCE.md", "SYSTEM_ARCHITECTURE.md", "DATA_FLOW.md", "TECH_STACK.md",
+                 "PROJECT_EXPLANATION.md", "USER_MANUAL.md"):
+        assert (docs / name).is_file(), name
+    for name in ("ReTrainIQ_Quick_Start.png", "ReTrainIQ_Workflow.png", "ReTrainIQ_Module_Guide.png",
+                 "ReTrainIQ_Retraining_Lifecycle.png", "ReTrainIQ_System_Architecture.png",
+                 "ReTrainIQ_API_Data_Flow.png"):
+        assert (docs / "manual" / name).stat().st_size > 20_000, name
