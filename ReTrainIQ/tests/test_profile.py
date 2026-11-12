@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-import io
 import json
 import tempfile
 import zipfile
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from ri_init.config import ROOT, WORKSPACE
+from ri_init.config import WORKSPACE
 import ri_init.store as store
 from ri_analysis.llm import MockLLM
 from ri_profile.understand import (
-    build_context,
     extract_profile,
     extract_zip_safe,
     fetch_repo,
     finalize_profile,
     heuristic_profile,
-    scan_project,
     verify_profile,
 )
 

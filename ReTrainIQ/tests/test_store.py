@@ -62,7 +62,7 @@ def test_store_roundtrip(temp_db):
     assert active is not None
     assert active["version"] == "v1"
 
-    v2_id = add_version("p1", "v2", "path/to/v2", "batch2", "candidate", db_path=temp_db)
+    _ = add_version("p1", "v2", "path/to/v2", "batch2", "candidate", db_path=temp_db)
     set_active_version("p1", "v2", db_path=temp_db)
     active2 = get_active_version("p1", db_path=temp_db)
     assert active2["version"] == "v2"

@@ -2,37 +2,36 @@ from __future__ import annotations
 
 import pytest
 import pandas as pd
-from pathlib import Path
 
 def test_imports():
-    import ri_init.config
-    import ri_init.setup_env
-    import ri_init.store
-    import ri_init.worker
-    import ri_init.make_demo_project
-
-    import ri_profile.understand
-
-    import ri_drift.drift
-    import ri_drift.plots
-    import ri_drift.scenarios
-
-    import ri_cara.cara_t
-    import ri_cara.replay_baselines
-    import ri_cara.proxy_eval
-
-    import ri_metrics.metrics
-
-    import ri_analysis.llm
-    import ri_analysis.summary
-    import ri_analysis.chat
-
-    import ri_decision.decision
-    import ri_decision.retrain
-    import ri_decision.orchestrator
-    import ri_decision.cli
-    import ri_decision.calibrate_score
-    import ri_decision.sensitivity
+    import importlib
+    modules = [
+        "ri_init.config",
+        "ri_init.setup_env",
+        "ri_init.store",
+        "ri_init.worker",
+        "ri_init.make_demo_project",
+        "ri_profile.understand",
+        "ri_drift.drift",
+        "ri_drift.plots",
+        "ri_drift.scenarios",
+        "ri_cara.cara_t",
+        "ri_cara.replay_baselines",
+        "ri_cara.proxy_eval",
+        "ri_metrics.metrics",
+        "ri_analysis.llm",
+        "ri_analysis.summary",
+        "ri_analysis.chat",
+        "ri_decision.decision",
+        "ri_decision.retrain",
+        "ri_decision.orchestrator",
+        "ri_decision.cli",
+        "ri_decision.calibrate_score",
+        "ri_decision.sensitivity",
+    ]
+    for m in modules:
+        mod = importlib.import_module(m)
+        assert mod is not None
 
 def test_contract_stubs():
     import ri_drift.drift as drift_mod

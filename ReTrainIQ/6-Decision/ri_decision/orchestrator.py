@@ -4,6 +4,7 @@ cooldown, decision handling, label attachment, and human resolution.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -218,6 +219,21 @@ def on_new_data(
     if not in_p.exists():
         raise FileNotFoundError(f"Incoming data file not found: {in_p}")
 
+    # Deduplication check by content hash
+    with open(in_p, "rb") as f:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+
+    uploaded_hashes = state.setdefault("uploaded_hashes", [])
+    if file_hash in uploaded_hashes:
+        return {
+            "status": "DUPLICATE",
+            "batches_processed": 0,
+            "reports": [],
+            "buffer_rows": state.get("buffer_rows", 0),
+            "issues": [f"File {in_p.name} already processed; skipping duplicate upload."],
+        }
+    uploaded_hashes.append(file_hash)
+
     df_in = pd.read_parquet(in_p) if in_p.suffix.lower() == ".parquet" else pd.read_csv(in_p)
 
     # Validate schema
@@ -402,7 +418,7 @@ def on_new_data(
                 cand_path = proj_dir / "models" / cand_ver / "model.joblib"
                 cand_path.parent.mkdir(parents=True, exist_ok=True)
 
-                train_res = retrain_mod.train_candidate(profile, batch_df, cand_path)
+                _ = retrain_mod.train_candidate(profile, batch_df, cand_path)
                 holdout_df_cand = pd.read_csv(profile["data"]["holdout_path"]) if profile["data"].get("holdout_path") else None
                 ver_res = retrain_mod.verify(cand_path, holdout_df_cand, profile)
 
@@ -491,7 +507,6 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
     record proxy_error on report, re-evaluate decision, and update store.
     """
     proj_dir = WORKSPACE / project_id
-    report_row = store.get_report(batch_id)  # report by id or lookup by batch_id
     # Look up reports for project to find exact report
     all_reports = store.get_reports(project_id)
     matching_report = next((r for r in all_reports if r["batch_id"] == batch_id), None)
@@ -499,6 +514,18 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
         raise ValueError(f"Report for batch_id {batch_id} not found in project {project_id}")
 
     report_id = matching_report["id"]
+
+    # Idempotency check: if labels already attached, return existing result without duplicate decisions
+    orig_score = json.loads(matching_report["score_json"]) if matching_report.get("score_json") else {}
+    if "proxy_error" in orig_score:
+        return {
+            "status": "ALREADY_ATTACHED",
+            "report_id": report_id,
+            "proxy_error": orig_score.get("proxy_error"),
+            "zone": matching_report["zone"],
+            "decision": orig_score,
+        }
+
     profile_path = proj_dir / "profile.json"
     with open(profile_path, "r", encoding="utf-8") as f:
         profile = json.load(f)
