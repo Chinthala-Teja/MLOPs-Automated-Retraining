@@ -8,6 +8,52 @@ current model only after it passes verification, and every promotion can be roll
 Python computes every number and the score. The LLM only drafts the project profile, proposes metric
 names from a fixed registry and writes explanations whose numbers are checked against the stored report.
 
+## What you get
+
+- A guided Streamlit dashboard: Overview, Project Setup, Monitoring, Analysis & Reports, Retraining History, AI Assistant, Documentation.
+- Module-by-module evidence for every check, a decision score with a what-if panel, and an eleven-step retraining pipeline view.
+- A five-step guided demo (stable batches, simulated covariate drift, simulated concept shift, verified promotion, monitoring of the new version).
+- Verified retraining with version bundles and rollback.
+- Staleness estimates while labels are late (CARA-T-L), replaced by measurements when labels arrive.
+- Works without an LLM; with one, every number in its text is checked against the stored report.
+
+![Overview](docs/screenshots/01_overview.png)
+
+| | |
+|---|---|
+| ![Guided demo](docs/screenshots/03_guided_demo.png) | ![Drift](docs/screenshots/04_module2_drift.png) |
+| ![Decision](docs/screenshots/07_decision.png) | ![Retraining](docs/screenshots/08_retraining.png) |
+
+## Documentation
+
+| Document | Content |
+|---|---|
+| [User manual](docs/USER_MANUAL.md) | How to use every page and button, and what to do on errors |
+| [Project explanation](docs/PROJECT_EXPLANATION.md) | Problem, method, mathematics, results, eleven trade-offs |
+| [System architecture](docs/SYSTEM_ARCHITECTURE.md) | Components, database, model handling, security |
+| [Data flow](docs/DATA_FLOW.md) | What is read, computed and stored at each step |
+| [API reference](docs/API_REFERENCE.md) | The one external API (LLM), GitHub cloning, all internal interfaces |
+| [Tech stack](docs/TECH_STACK.md) | What each library is used for |
+| [Status](docs/STATUS.md) · [Contract](CONTRACT.md) · [Changelog](CHANGELOG.md) | Progress, function signatures, history |
+
+Visual guides (PNG, regenerate with `python tools/make_manuals.py`):
+[Quick start](docs/manual/ReTrainIQ_Quick_Start.png) ·
+[Workflow](docs/manual/ReTrainIQ_Workflow.png) ·
+[Module guide](docs/manual/ReTrainIQ_Module_Guide.png) ·
+[Retraining lifecycle](docs/manual/ReTrainIQ_Retraining_Lifecycle.png) ·
+[System architecture](docs/manual/ReTrainIQ_System_Architecture.png) ·
+[API and data flow](docs/manual/ReTrainIQ_API_Data_Flow.png)
+
+![Workflow](docs/manual/ReTrainIQ_Workflow.png)
+
+## Demo in two minutes
+
+```bash
+streamlit run frontend/app.py
+```
+
+Project Setup → Demo project → **Load / reset the demo project**; then Monitoring → Guided demo → **Run next step** five times; then Analysis & Reports. The demo data and its shifts are simulated.
+
 ## Modules
 
 1. **Module 1, understand (`1-Profile`)**: static scan of a GitHub repo or ZIP (never executed), profile draft, code-side verification, model smoke test in a sandbox.

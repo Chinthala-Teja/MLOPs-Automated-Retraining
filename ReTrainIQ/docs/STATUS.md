@@ -25,7 +25,8 @@ GitHub cloning (`fetch_repo`) against the network.
 | M3 | CARA-T calibration + measured staleness + CARA-T-L estimate | Done |
 | M4 | Metric registry, bootstrap SE, baseline comparison | Done |
 | 4 | LLM client, metric plan, validated summary, chat | Done (real LLM call untested) |
-| 5 | Streamlit UI (Setup, Monitor, Report, Chat, demo mode) | Done (browser check pending) |
+| 5 | Streamlit UI: seven sections, guided four-module workflow, guided demo | Done (redesigned 2026-11-12; rendered in a headless browser, screenshots in docs/screenshots) |
+| 5b | Documentation: API reference, architecture, data flow, tech stack, project explanation, user manual, six PNG guides | Done |
 | 6 | Baselines, sensitivity, score calibration, label-free evaluation | Done on the demo project |
 | 7 | Airlines / Electricity / Covertype runs, 5 seeds, report rewrite | **Open** |
 
@@ -66,7 +67,7 @@ These are results on one synthetic stream with one seed. They are not evidence a
 ## Remaining work (in order)
 
 1. Local check on Windows / Python 3.10: commands in README "Verify on your machine".
-2. Open the UI in a browser and click through the four pages and demo mode.
+2. Open the UI in your own browser and click through the seven sections and the guided demo.
 3. Put an LLM key in `.env`, test profile extraction and the AI summary.
 4. Airlines project: export the notebook model as one scikit-learn Pipeline, register it through Setup,
    run `cli replay` and `cli evaluate`; then Electricity and Covertype with scikit-learn models.

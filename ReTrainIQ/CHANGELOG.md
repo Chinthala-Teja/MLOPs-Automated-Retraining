@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [UI redesign and documentation] — 2026-11-12
+
+### Added
+- **Frontend redesign**: one themed app with seven sections (Overview, Project Setup, Monitoring, Analysis & Reports, Retraining History, AI Assistant, Documentation); `frontend/ui.py` (theme, cards, charts), `frontend/demo.py` (guided demo), `.streamlit/config.toml`.
+- **Guided workflow**: Module 1 progress list and profile form with Confirm Profile; per-check tabs for drift, staleness, quality, decision (formula, contributions, what-if) and the eleven-step retraining pipeline.
+- **Guided demo**: five restartable steps, all labelled as simulation.
+- **Documentation**: `docs/API_REFERENCE.md`, `SYSTEM_ARCHITECTURE.md`, `DATA_FLOW.md`, `TECH_STACK.md`, `PROJECT_EXPLANATION.md`, `USER_MANUAL.md`; six PNG guides in `docs/manual/` drawn by `tools/make_manuals.py`; screenshots in `docs/screenshots/`.
+- **Backend (small)**: per-class recall for multiclass tasks; schema-check details stored with the drift report; human-requested retraining results stored in the report.
+- **Tests**: every UI section renders, guided-demo definition, PENDING without labels, no secrets in tracked files, documentation assets exist.
+
+### Validation
+- **2026-11-12** (cloud session, Linux, Python 3.13): `pytest -q` 72 passed in 388.03s; `ruff check --select E4,E7,E9,F .` clean; all seven UI sections rendered in a headless browser (screenshots in docs/screenshots); the five guided-demo steps ran through the real pipeline (KEEP x3, drift flagged x2 with KEEP, RETRAIN and PROMOTED, KEEP x2). Not run on Windows; no live LLM call.
+
+---
+
 ## [Stage 4-6 + Modules 2-4] — 2026-11-12
 
 ### Added
