@@ -34,6 +34,25 @@ def run_setup(project_id: str) -> None:
             print(f"  - {iss}")
 
 
+def run_rollback(project_id: str) -> None:
+    result = orch.rollback(project_id)
+    print(
+        f"Rollback completed for project '{project_id}': "
+        f"status={result['status']}, active_version={result['active_version']}"
+    )
+
+
+def run_versions(project_id: str) -> None:
+    versions = store.get_versions(project_id)
+    print(f"{'Version':<12} {'Status':<12} {'Trained On':<24} {'Created'}")
+    print("-" * 72)
+    for version in versions:
+        print(
+            f"{version['version']:<12} {version['status']:<12} "
+            f"{version['trained_on']:<24} {version['created_at']}"
+        )
+
+
 def run_replay(
     project_id: str,
     batches_dir: str | Path,
@@ -166,11 +185,21 @@ def main() -> None:
     replay_p.add_argument("--limit", type=int, default=None, help="Limit number of batches to process")
     replay_p.add_argument("--label-lag", type=int, default=0, help="Number of batches to lag labels behind")
 
+    rollback_p = subparsers.add_parser("rollback", help="Restore the previous model version")
+    rollback_p.add_argument("--project", type=str, default="demo", help="Project ID")
+
+    versions_p = subparsers.add_parser("versions", help="List registered model versions")
+    versions_p.add_argument("--project", type=str, default="demo", help="Project ID")
+
     args = parser.parse_args()
     if args.command == "setup":
         run_setup(args.project)
     elif args.command == "replay":
         run_replay(args.project, args.batches, limit=args.limit, label_lag=args.label_lag)
+    elif args.command == "rollback":
+        run_rollback(args.project)
+    elif args.command == "versions":
+        run_versions(args.project)
 
 
 if __name__ == "__main__":

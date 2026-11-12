@@ -131,6 +131,7 @@ def test_attach_labels_stores_proxy_error_and_is_idempotent():
         attach_res = orch.attach_labels("demo", batch_id, p_labels)
         assert attach_res["status"] == "OK"
         assert "proxy_error" in attach_res
+        assert store.get_batch(batch_id)["n_labelled"] == len(full_df)
 
         # Verify update in store
         updated_rep = store.get_report(rep["report_id"])

@@ -61,3 +61,12 @@ In production, ground-truth labels often arrive with variable latency (label lag
 1. **Unlabelled Batches:** The system runs drift detection and CARA-T confidence-based estimation (`estimate_staleness`), setting `basis='estimated'` and capping the operational zone at `HUMAN` with the alert `request labels`.
 2. **Late-Label Attachment:** When ground-truth labels are supplied later via `attach_labels(batch_id, labels)`, the orchestrator re-evaluates true measured staleness and metric degradation, calculates proxy estimation error ($\text{proxy\_error} = \text{staleness}_{\text{est}} - \text{staleness}_{\text{meas}}$), updates the persistent report, and logs decision actions idempotently.
 
+## 4. Retraining, Verification, and Rollback
+
+Automatic `RETRAIN` decisions and human-approved retrains enter the same `run_retrain_cycle`:
+
+1. Select the most recent `W` batches with at least 90% labelled rows. The newest batch is kept in time order; its first 80% joins the training data and its last 20% is the verification slice.
+2. Clone and fit the active scikit-learn pipeline in the worker process. Compare the candidate and champion on the verification slice with a paired bootstrap; also enforce the primary-metric holdout tolerance and the binary positive-class recall guard.
+3. Keep failed candidates registered as `rejected` and record their training duration. A passing candidate is atomically promoted, registered as active, and gets a versioned bundle containing its model, calibration, baseline, training sample, and drift reference.
+4. Recompute calibration from up to `offline_batches_N` labelled batches when at least ten are available; otherwise preserve the previous calibration and report a warning. Refresh the holdout baseline, training sample, and drift reference after promotion.
+5. Track the prior model for three labelled batches. A mean primary-metric regression greater than 0.02 raises a rollback suggestion; automatic rollback is disabled unless `auto_rollback` is enabled. `rollback --project <id>` restores the previous model and its full bundle.

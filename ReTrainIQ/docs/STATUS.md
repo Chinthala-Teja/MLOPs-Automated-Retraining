@@ -1,7 +1,7 @@
 # ReTrainIQ Implementation Status
 
 **Date:** 2026-11-12  
-**Test Suite:** 37 passed in 61.91s (no scikit-learn version warnings)  
+**Test Suite:** 50 passed in 131.44s (no scikit-learn version warnings)
 **Code Quality:** Ruff 0.9.10 check passing cleanly
 
 ## Stage Progress
@@ -15,7 +15,7 @@
 | Stage 1 | Module 1: `ri_profile.understand` | Teja | **DONE** | Safe zip extraction, repo scanning, profile verification |
 | Stage 2A | Decision Engine: `ri_decision.decision` | Teja | **DONE** | Sigmoid score, clipping, monotonic property, safety guard |
 | Stage 2B | Orchestrator & CLI: `orchestrator.py`, `cli.py` | Teja | **DONE** | Stream buffering, cooldown, late-label replay with lag |
-| Stage 3 | Retrain, Verify, Promote, Rollback | Teja | Not Started | Candidate training & holdout verification |
+| Stage 3 | Retrain, Verify, Promote, Rollback | Teja | **DONE** | Worker-isolated training, paired V-slice and holdout gates, version bundles, shadow checks and rollback |
 | Stage 4 | Module 5: LLM Summary & Chat | Teja | Not Started | `ri_analysis` full client implementation |
 | Stage 5 | Frontend: Streamlit Dashboard | Teja | Not Started | Interactive monitoring UI & demo mode |
 | Stage 6 | Calibration & Evaluation | Teja | Not Started | Weight calibration & sensitivity sweeps |

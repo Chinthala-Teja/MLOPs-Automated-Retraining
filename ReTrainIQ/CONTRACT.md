@@ -18,7 +18,7 @@ cara_t -> {'module':'cara_t','status':'OK'|'PENDING'|'ESTIMATED'|'STUB','stalene
 quality -> {'module':'quality','status':'OK'|'PENDING'|'STUB','n':int,'metrics':{name:{'value':float,'se':float}},'curves':{},'z_m':float,'degraded':bool,'table':[{'metric':str,'reference':float,'current':float,'delta':float}]}
 decision -> {'P':float,'zone':'RETRAIN'|'HUMAN'|'KEEP','zc':float,'zm':float,'d':float,'reason':str,'basis':'measured'|'estimated'|'none','terms':dict,'flags':list}
 SIGNATURES (exact):
-ri_init.store: init_db(db_path=None); add_project(project_id, source, profile_json, status='active'); get_project(project_id); add_batch(project_id, file, n_rows, n_labelled); add_report(project_id, batch_id, drift_json, cara_json, quality_json, score_json, zone, summary); update_report(report_id, **fields); get_report(report_id); get_reports(project_id); add_decision(report_id, action, by, note); add_version(project_id, version, path, trained_on, status='candidate'); set_active_version(project_id, version); get_active_version(project_id)
+ri_init.store: init_db(db_path=None); add_project(project_id, source, profile_json, status='active'); get_project(project_id); add_batch(project_id, file, n_rows, n_labelled); get_batch(batch_id); get_batches(project_id); update_batch(batch_id, n_rows, n_labelled); add_report(project_id, batch_id, drift_json, cara_json, quality_json, score_json, zone, summary); update_report(report_id, **fields); get_report(report_id); get_reports(project_id); add_decision(report_id, action, by, note); add_version(project_id, version, path, trained_on, status='candidate'); get_versions(project_id); set_active_version(project_id, version); get_active_version(project_id)
 ri_init.worker: run_in_worker(callable_path:str, kwargs:dict, timeout:int=900)->dict
 ri_profile.understand: fetch_repo(url, dest); extract_zip_safe(zip_path, dest, max_mb=300, max_files=5000); scan_project(path); build_context(scan, max_chars=20000); extract_profile(context, llm); heuristic_profile(scan=None, dataset_path=None, target=None); verify_profile(profile); finalize_profile(profile, user_edits=None)
 ri_drift.drift: run_drift(reference_df, new_df, profile)->dict; validate_schema(df, profile)->dict; fit_reference(reference_df, profile)->dict; prediction_shift(ref_pred, new_pred, ref_proba=None, new_proba=None)->dict
@@ -31,8 +31,8 @@ ri_metrics.metrics: REGISTRY; default_plan(profile); validate_plan(plan); run_me
 ri_analysis.summary: summarize(report); validate_summary(text, report); template_summary(report)
 ri_analysis.chat: chat(question, project_id, tools=None)
 ri_decision.decision: decide(drift, cara, quality, cfg=None)->dict; what_if(drift, cara, quality, cfg_overrides=None)->dict
-ri_decision.retrain: train_candidate(profile, train_df, out_path); verify(candidate_path, holdout_df, profile); promote(candidate_path, active_path); rollback(previous_path, active_path)
-ri_decision.orchestrator: setup_project(profile); on_new_data(project_id, file_path, labels_path=None); attach_labels(project_id, batch_id, labels_path); resolve_human(project_id, report_id, choice, force=False)
+ri_decision.retrain: train_candidate(profile, train_df, out_path, seed=None, *, champion_path=None); build_training_data(project_id, profile); verify(candidate_path, holdout_df, profile, champion_path=None, v_df=None, margin=0.0, tol=0.02, recall_guard=0.02, n_boot=500, seed=42); promote(candidate_path, active_path); rollback(previous_path, active_path); save_bundle(project_id, version); load_bundle(project_id, version); run_retrain_cycle(project_id, trigger, report_id=None, force=False); shadow_check(project_id, batch_df); rollback_project(project_id)
+ri_decision.orchestrator: setup_project(profile); on_new_data(project_id, file_path, labels_path=None); attach_labels(project_id, batch_id, labels_path); resolve_human(project_id, report_id, choice, force=False); rollback(project_id)
 SANDBOX: the orchestrator calls model-touching functions as ri_init.worker.run_in_worker('ri_cara.cara_t:calibrate', kwargs)->dict. Functions take paths and DataFrames and return dicts.
 STUBS: until a teammate replaces them, functions return valid dicts with 'status':'STUB' and the module has IS_STUB = True.
 MODEL: a scikit-learn Pipeline that accepts raw rows; train copies with sklearn.base.clone(pipeline).fit(X, y). Never run scripts from a user's repo.
@@ -45,3 +45,9 @@ MODEL: a scikit-learn Pipeline that accepts raw rows; train copies with sklearn.
 - orchestrator: an unlabelled batch runs drift + estimate_staleness and ends in HUMAN with the alert 'request labels'; when labels are attached later the measured result is computed and 'proxy_error' (estimated minus measured staleness) is stored in the report.
 - add ri_cara/proxy_eval.py stub: run_proxy_eval(profile, cfg)->DataFrame.
 - FOLDERS update: 3-CARA/ri_cara: cara_t.py replay_baselines.py proxy_eval.py (Udaykiran).
+
+# Contract v3
+- `ri_init.store.get_batches(project_id)` returns batches ordered by insertion ID; `get_versions(project_id)` returns registered model versions ordered by insertion ID.
+- Retraining uses the last `W` labelled batches, splits the newest batch's final 20% into a chronological verification slice, and promotes only if the paired verification and reference-holdout gates pass (unless explicitly forced).
+- Model versions store `model.joblib`, `calib.json`, `baseline.json`, `train_sample.csv`, and `reference_stats.json` together. Rollback restores the prior model and bundle.
+- The orchestrator calls `run_retrain_cycle` for automatic and human retrains, checks the previous model during the three-batch shadow period, and only automatically rolls back when `DEFAULT_CONFIG['auto_rollback']` is enabled.

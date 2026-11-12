@@ -15,4 +15,5 @@ DEFAULT_CONFIG = {
     "keep_limit": 0.35,
     "z_clip": 3.0,
     "s_floor": 1e-6,
+    "auto_rollback": False,
 }

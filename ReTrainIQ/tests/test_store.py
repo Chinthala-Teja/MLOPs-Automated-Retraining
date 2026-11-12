@@ -6,6 +6,8 @@ from ri_init.store import (
     add_project,
     get_project,
     add_batch,
+    get_batches,
+    update_batch,
     add_report,
     get_reports,
     get_report,
@@ -14,6 +16,7 @@ from ri_init.store import (
     add_version,
     set_active_version,
     get_active_version,
+    get_versions,
 )
 
 @pytest.fixture
@@ -66,3 +69,17 @@ def test_store_roundtrip(temp_db):
     set_active_version("p1", "v2", db_path=temp_db)
     active2 = get_active_version("p1", db_path=temp_db)
     assert active2["version"] == "v2"
+    versions = get_versions("p1", db_path=temp_db)
+    assert [version["version"] for version in versions] == ["v1", "v2"]
+    assert [version["status"] for version in versions] == ["previous", "active"]
+
+def test_get_batches_returns_in_insertion_order(temp_db):
+    add_project("p1", "source_git", '{"name":"test"}', db_path=temp_db)
+    first = add_batch("p1", "batch_z.csv", 10, 10, db_path=temp_db)
+    second = add_batch("p1", "batch_a.csv", 10, 10, db_path=temp_db)
+
+    batches = get_batches("p1", db_path=temp_db)
+
+    assert [batch["id"] for batch in batches] == [first, second]
+    update_batch(first, 10, 9, db_path=temp_db)
+    assert get_batches("p1", db_path=temp_db)[0]["n_labelled"] == 9

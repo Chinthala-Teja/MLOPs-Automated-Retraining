@@ -18,10 +18,14 @@ EXPECTED_SIGNATURES: Dict[str, Dict[str, List[str]]] = {
         "add_project": ["project_id", "source", "profile_json"],
         "get_project": ["project_id"],
         "add_batch": ["project_id", "file", "n_rows", "n_labelled"],
+        "get_batch": ["batch_id"],
+        "get_batches": ["project_id"],
+        "update_batch": ["batch_id", "n_rows", "n_labelled"],
         "add_report": ["project_id", "batch_id", "drift_json", "cara_json", "quality_json", "score_json", "zone", "summary"],
         "get_reports": ["project_id"],
         "add_decision": ["report_id", "action", "by", "note"],
         "add_version": ["project_id", "version", "path", "trained_on"],
+        "get_versions": ["project_id"],
         "set_active_version": ["project_id", "version"],
         "get_active_version": ["project_id"],
     },
@@ -87,16 +91,23 @@ EXPECTED_SIGNATURES: Dict[str, Dict[str, List[str]]] = {
         "what_if": ["drift", "cara", "quality"],
     },
     "ri_decision.retrain": {
-        "train_candidate": ["profile", "train_df", "out_path"],
-        "verify": ["candidate_path", "holdout_df", "profile"],
+        "train_candidate": ["profile", "train_df", "out_path", "seed", "champion_path"],
+        "build_training_data": ["project_id", "profile"],
+        "verify": ["candidate_path", "holdout_df", "profile", "champion_path", "v_df", "margin", "tol", "recall_guard", "n_boot", "seed"],
         "promote": ["candidate_path", "active_path"],
         "rollback": ["previous_path", "active_path"],
+        "save_bundle": ["project_id", "version"],
+        "load_bundle": ["project_id", "version"],
+        "run_retrain_cycle": ["project_id", "trigger", "report_id", "force"],
+        "shadow_check": ["project_id", "batch_df"],
+        "rollback_project": ["project_id"],
     },
     "ri_decision.orchestrator": {
         "setup_project": ["profile"],
         "on_new_data": ["project_id", "file_path"],
         "attach_labels": ["project_id", "batch_id", "labels_path"],
         "resolve_human": ["project_id", "report_id", "choice"],
+        "rollback": ["project_id"],
     },
 }
 
@@ -188,4 +199,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

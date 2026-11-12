@@ -116,6 +116,35 @@ def get_batch(batch_id: int, db_path: Optional[Path] = None) -> Optional[Dict[st
         return dict(row)
     return None
 
+def get_batches(project_id: str, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Return a project's batches in insertion order."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM batches WHERE project_id = ? ORDER BY id ASC", (project_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def update_batch(
+    batch_id: int,
+    n_rows: int,
+    n_labelled: int,
+    db_path: Optional[Path] = None,
+) -> None:
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            updated = conn.execute(
+                "UPDATE batches SET n_rows = ?, n_labelled = ? WHERE id = ?",
+                (n_rows, n_labelled, batch_id),
+            )
+            if updated.rowcount == 0:
+                raise ValueError(f"Batch {batch_id} was not found.")
+    finally:
+        conn.close()
+
 def add_report(project_id: str, batch_id: int, drift_json: str, cara_json: str, quality_json: str, score_json: str, zone: str, summary: str, db_path: Optional[Path] = None) -> int:
     init_db(db_path)
     conn = get_connection(db_path)
@@ -161,7 +190,7 @@ def get_reports(project_id: str, db_path: Optional[Path] = None) -> List[Dict[st
     conn.close()
     return [dict(r) for r in rows]
 
-def add_decision(report_id: int, action: str, by: str, note: str, db_path: Optional[Path] = None) -> int:
+def add_decision(report_id: Optional[int], action: str, by: str, note: str, db_path: Optional[Path] = None) -> int:
     init_db(db_path)
     conn = get_connection(db_path)
     with conn:
@@ -177,27 +206,69 @@ def add_version(project_id: str, version: str, path: str, trained_on: str, statu
     init_db(db_path)
     conn = get_connection(db_path)
     with conn:
-        cursor = conn.execute(
-            "INSERT INTO model_versions (project_id, version, path, trained_on, status) VALUES (?, ?, ?, ?, ?)",
-            (project_id, version, path, trained_on, status)
-        )
-        v_id = cursor.lastrowid
+        existing = conn.execute(
+            "SELECT id FROM model_versions WHERE project_id = ? AND version = ? ORDER BY id DESC LIMIT 1",
+            (project_id, version),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE model_versions SET path = ?, trained_on = ?, status = ? WHERE id = ?",
+                (path, trained_on, status, existing["id"]),
+            )
+            v_id = existing["id"]
+        else:
+            cursor = conn.execute(
+                "INSERT INTO model_versions (project_id, version, path, trained_on, status) VALUES (?, ?, ?, ?, ?)",
+                (project_id, version, path, trained_on, status),
+            )
+            v_id = cursor.lastrowid
     conn.close()
     return v_id
 
 def set_active_version(project_id: str, version: str, db_path: Optional[Path] = None) -> None:
     init_db(db_path)
     conn = get_connection(db_path)
-    with conn:
-        conn.execute(
-            "UPDATE model_versions SET status = 'inactive' WHERE project_id = ? AND status = 'active'",
-            (project_id,)
-        )
-        conn.execute(
-            "UPDATE model_versions SET status = 'active' WHERE project_id = ? AND version = ?",
-            (project_id, version)
-        )
+    try:
+        with conn:
+            target = conn.execute(
+                """SELECT id FROM model_versions WHERE project_id = ? AND version = ?
+                   ORDER BY id DESC LIMIT 1""",
+                (project_id, version),
+            ).fetchone()
+            if not target:
+                raise ValueError(
+                    f"Model version {version!r} is not registered for project {project_id!r}"
+                )
+            conn.execute(
+                "UPDATE model_versions SET status = 'previous' WHERE project_id = ? AND status = 'active'",
+                (project_id,)
+            )
+            conn.execute(
+                "UPDATE model_versions SET status = 'active' WHERE id = ?",
+                (target["id"],)
+            )
+    finally:
+        conn.close()
+
+def get_versions(project_id: str, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Return the latest registration for each model version in registration order."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT version_row.* FROM model_versions AS version_row
+           WHERE version_row.project_id = ?
+             AND version_row.id = (
+                 SELECT MAX(latest.id) FROM model_versions AS latest
+                 WHERE latest.project_id = version_row.project_id
+                   AND latest.version = version_row.version
+             )
+           ORDER BY version_row.id ASC""",
+        (project_id,),
+    )
+    rows = cursor.fetchall()
     conn.close()
+    return [dict(row) for row in rows]
 
 def get_active_version(project_id: str, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     init_db(db_path)

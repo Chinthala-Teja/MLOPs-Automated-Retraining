@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from ri_init.config import ROOT, WORKSPACE
+from ri_init.config import DEFAULT_CONFIG, ROOT, WORKSPACE
 import ri_init.store as store
 from ri_init.worker import run_in_worker
 
@@ -50,6 +50,9 @@ def _load_state(project_id: str) -> Dict[str, Any]:
     return {
         "active_version": "v1",
         "cooldown_left": 0,
+        "shadow_left": 0,
+        "shadow_drops": [],
+        "previous_version": None,
         "buffer_rows": 0,
         "batch_counter": 0,
     }
@@ -90,7 +93,13 @@ def setup_project(profile: Dict[str, Any]) -> Dict[str, Any]:
 
     # Register version v1 as active
     model_art_raw = profile.get("model", {}).get("artifact")
-    model_art = _to_rel_path(_resolve_path(model_art_raw))
+    if not model_art_raw:
+        raise ValueError("Project profile must define model.artifact.")
+    source_model_path = _resolve_path(model_art_raw)
+    version_model_path = models_dir / "v1" / "model.joblib"
+    if source_model_path != version_model_path.resolve():
+        retrain_mod.promote(source_model_path, version_model_path)
+    model_art = _to_rel_path(version_model_path)
     store.add_version(
         project_id=project_id,
         version="v1",
@@ -172,10 +181,16 @@ def setup_project(profile: Dict[str, Any]) -> Dict[str, Any]:
     with open(ref_stats_file, "w", encoding="utf-8") as f:
         json.dump(ref_stats, f, indent=2)
 
+    retrain_mod.promote(version_model_path, models_dir / "active" / "model.joblib")
+    retrain_mod.save_bundle(project_id, "v1")
+
     # Initialize state
     state = {
         "active_version": "v1",
         "cooldown_left": 0,
+        "shadow_left": 0,
+        "shadow_drops": [],
+        "previous_version": None,
         "buffer_rows": 0,
         "batch_counter": 0,
     }
@@ -325,6 +340,21 @@ def on_new_data(
     n_batches_processed = 0
 
     while len(df_combined) >= B:
+        if train_sample_path.exists():
+            train_sample_df = pd.read_csv(train_sample_path)
+        if calib_file.exists():
+            with open(calib_file, "r", encoding="utf-8") as f:
+                calib = json.load(f)
+        if baseline_file.exists():
+            with open(baseline_file, "r", encoding="utf-8") as f:
+                baseline = json.load(f)
+        active_ver = store.get_active_version(project_id)
+        model_path = (
+            _resolve_path(active_ver["path"])
+            if active_ver
+            else _resolve_path(profile["model"]["artifact"])
+        )
+
         batch_df = df_combined.iloc[:B].copy()
         df_combined = df_combined.iloc[B:].reset_index(drop=True)
 
@@ -402,42 +432,42 @@ def on_new_data(
             dec_res["zone"] = "HUMAN"
             dec_res["reason"] = "cooldown"
 
+        rel_batch_path = _to_rel_path(batch_path)
+        batch_id = store.add_batch(
+            project_id,
+            rel_batch_path or str(batch_path),
+            n_rows,
+            n_labelled,
+        )
+        state["buffer_rows"] = len(df_combined)
+        _save_state(project_id, state)
+
         # Action handling
         action_recorded = "KEEP"
         decision_by = "system"
         decision_note = dec_res.get("reason", "")
 
         if zone == "RETRAIN":
-            # Check if retrain module is stub
-            if getattr(retrain_mod, "IS_STUB", True):
-                action_recorded = "retrain skipped (stub)"
-            else:
-                # Run train_candidate, verify, promote
-                next_v_idx = int(state.get("active_version", "v1").replace("v", "")) + 1
-                cand_ver = f"v{next_v_idx}"
-                cand_path = proj_dir / "models" / cand_ver / "model.joblib"
-                cand_path.parent.mkdir(parents=True, exist_ok=True)
-
-                _ = retrain_mod.train_candidate(profile, batch_df, cand_path)
-                holdout_df_cand = pd.read_csv(profile["data"]["holdout_path"]) if profile["data"].get("holdout_path") else None
-                ver_res = retrain_mod.verify(cand_path, holdout_df_cand, profile)
-
-                if ver_res.get("verified", False):
-                    active_path = proj_dir / "models" / cand_ver / "model.joblib"
-                    retrain_mod.promote(cand_path, active_path)
-                    store.add_version(project_id, cand_ver, str(_to_rel_path(active_path)), batch_filename, "active")
-                    store.set_active_version(project_id, cand_ver)
-                    state["active_version"] = cand_ver
-                    model_path = active_path
-                    action_recorded = "PROMOTED"
-
-                    # Rerun calibrate, refresh train_sample and baseline, set cooldown
-                    calib = run_in_worker("ri_cara.cara_t:calibrate", {"model_path": str(model_path), "history_df": batch_df, "profile": profile, "cfg": {}})
-                    with open(calib_file, "w", encoding="utf-8") as f:
-                        json.dump(calib, f, indent=2)
-                    state["cooldown_left"] = int(profile.get("W", 1))
-                else:
-                    action_recorded = "VERIFY_FAILED"
+            retrain_result = retrain_mod.run_retrain_cycle(
+                project_id,
+                trigger="automatic",
+            )
+            action_recorded = retrain_result["status"]
+            if retrain_result.get("seconds") is not None:
+                decision_note = (
+                    f"{decision_note}; training_seconds="
+                    f"{float(retrain_result['seconds']):.6f}"
+                ).strip("; ")
+            cycle_state = _load_state(project_id)
+            for key in (
+                "active_version",
+                "cooldown_left",
+                "shadow_left",
+                "shadow_drops",
+                "previous_version",
+            ):
+                if key in cycle_state:
+                    state[key] = cycle_state[key]
 
         elif zone == "HUMAN":
             action_recorded = "pending"
@@ -449,12 +479,31 @@ def on_new_data(
             action_recorded = "KEEP"
 
         # Decrement cooldown after each labelled batch
-        if is_labelled and state["cooldown_left"] > 0:
+        if (
+            is_labelled
+            and state["cooldown_left"] > 0
+            and action_recorded != "PROMOTED"
+        ):
             state["cooldown_left"] -= 1
 
-        # Store batch, report, and decision
-        rel_batch_path = _to_rel_path(batch_path)
-        batch_id = store.add_batch(project_id, rel_batch_path or str(batch_path), n_rows, n_labelled)
+        shadow_result: Dict[str, Any] = {"rollback_suggested": False}
+        if is_labelled:
+            shadow_result = retrain_mod.shadow_check(project_id, batch_df)
+            shadow_state = _load_state(project_id)
+            for key in ("shadow_left", "shadow_drops"):
+                if key in shadow_state:
+                    state[key] = shadow_state[key]
+            if shadow_result.get("rollback_suggested"):
+                dec_res["alert"] = "rollback suggested"
+                decision_note = f"{decision_note}; rollback suggested".strip("; ")
+                if DEFAULT_CONFIG.get("auto_rollback", False):
+                    rollback_result = rollback(project_id)
+                    action_recorded = "ROLLED_BACK"
+                    decision_note = (
+                        f"{decision_note}; automatic rollback to "
+                        f"{rollback_result['active_version']}"
+                    )
+                    state = _load_state(project_id)
 
         summary_text = f"Batch {batch_filename}: Zone {zone}. {decision_note}"
         report_id = store.add_report(
@@ -481,6 +530,7 @@ def on_new_data(
             "decision": dec_res,
             "zone": zone,
             "action": action_recorded,
+            "shadow": shadow_result,
         }
         reports_out.append(rep_dict)
 
@@ -560,6 +610,11 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
 
     # Overwrite batch file with labelled data
     batch_df.to_csv(batch_file, index=False)
+    store.update_batch(
+        batch_id,
+        len(batch_df),
+        int(batch_df[target_col].notna().sum()),
+    )
 
     train_sample_df = pd.read_csv(proj_dir / "data" / "train_sample.csv")
     with open(proj_dir / "calib.json", "r", encoding="utf-8") as f:
@@ -608,6 +663,13 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
     dec_res = decision_mod.decide(drift_orig, cara_measured, quality_measured)
     dec_res["proxy_error"] = proxy_error
     zone = dec_res["zone"]
+    decision_note = f"Late labels attached. Re-evaluated zone: {zone}."
+    shadow_result = retrain_mod.shadow_check(project_id, batch_df)
+    if shadow_result.get("rollback_suggested"):
+        dec_res["alert"] = "rollback suggested"
+        decision_note += " rollback suggested."
+        if DEFAULT_CONFIG.get("auto_rollback", False):
+            rollback(project_id)
 
     # Update report
     store.update_report(
@@ -616,11 +678,35 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
         quality_json=json.dumps(quality_measured),
         score_json=json.dumps(dec_res),
         zone=zone,
-        summary=f"Late labels attached. Re-evaluated zone: {zone}.",
+        summary=decision_note,
     )
 
-    action = "KEEP" if zone == "KEEP" else ("retrain skipped (stub)" if zone == "RETRAIN" else "pending")
-    store.add_decision(report_id, action, "late_labels", f"proxy_error={proxy_error}")
+    action = "KEEP" if zone == "KEEP" else "pending"
+    if zone == "RETRAIN":
+        retrain_result = retrain_mod.run_retrain_cycle(
+            project_id,
+            trigger="automatic",
+            report_id=report_id,
+        )
+        action = retrain_result["status"]
+        if retrain_result.get("reason"):
+            decision_note += f" {retrain_result['reason']}"
+        else:
+            decision_note += (
+                f" training_seconds={float(retrain_result.get('seconds', 0.0)):.6f}"
+            )
+    if shadow_result.get("rollback_suggested"):
+        if zone != "RETRAIN":
+            action = "rollback suggested"
+        if DEFAULT_CONFIG.get("auto_rollback", False):
+            action = "automatic rollback"
+    store.update_report(report_id, summary=decision_note)
+    store.add_decision(
+        report_id,
+        action,
+        "late_labels",
+        f"proxy_error={proxy_error}; {decision_note}".strip("; "),
+    )
 
     return {
         "status": "OK",
@@ -628,6 +714,7 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
         "proxy_error": proxy_error,
         "zone": zone,
         "decision": dec_res,
+        "shadow": shadow_result,
     }
 
 
@@ -638,42 +725,47 @@ def resolve_human(project_id: str, report_id: int, choice: str, force: bool = Fa
     if choice not in ("RETRAIN", "KEEP"):
         raise ValueError(f"Invalid human choice: {choice}. Must be 'RETRAIN' or 'KEEP'.")
 
-    proj_dir = WORKSPACE / project_id
     report = store.get_report(report_id)
     if not report:
         raise ValueError(f"Report id {report_id} not found")
 
     action = choice
     if choice == "RETRAIN":
-        if getattr(retrain_mod, "IS_STUB", True):
-            action = "retrain skipped (stub)"
-        else:
-            profile_path = proj_dir / "profile.json"
-            with open(profile_path, "r", encoding="utf-8") as f:
-                profile = json.load(f)
-
-            batch_id = report["batch_id"]
-            batch_file = proj_dir / "data" / "batches" / f"batch_{batch_id - 1:03d}.csv"
-            batch_df = pd.read_csv(batch_file)
-
-            cand_path = proj_dir / "models" / "v_human" / "model.joblib"
-            cand_path.parent.mkdir(parents=True, exist_ok=True)
-            _ = retrain_mod.train_candidate(profile, batch_df, cand_path)
-
-            holdout_df = pd.read_csv(profile["data"]["holdout_path"]) if profile["data"].get("holdout_path") else None
-            ver = retrain_mod.verify(cand_path, holdout_df, profile)
-
-            if not ver.get("verified", False) and not force:
-                return {"status": "VERIFY_FAILED"}
-
-            retrain_mod.promote(cand_path, proj_dir / "models" / "active" / "model.joblib")
-            action = "PROMOTED"
-
-    store.add_decision(report_id, action, "human", f"Human resolved as {choice}")
+        batch_record = store.get_batch(report["batch_id"])
+        if not batch_record or not batch_record.get("file"):
+            raise FileNotFoundError(
+                f"Stored batch {report['batch_id']} for report {report_id} was not found."
+            )
+        batch_file = _resolve_path(batch_record["file"])
+        if not batch_file or not batch_file.is_file():
+            raise FileNotFoundError(
+                f"Stored batch file for report {report_id} was not found: {batch_record['file']}"
+            )
+        retrain_result = retrain_mod.run_retrain_cycle(
+            project_id,
+            trigger="human",
+            report_id=report_id,
+            force=force,
+        )
+        action = retrain_result["status"]
+        if action == "INSUFFICIENT_DATA":
+            store.add_decision(
+                report_id,
+                action,
+                "human",
+                retrain_result.get("reason", "Insufficient labelled data."),
+            )
+    else:
+        store.add_decision(report_id, action, "human", f"Human resolved as {choice}")
     store.update_report(report_id, zone=choice)
 
     return {
-        "status": "OK",
+        "status": action if choice == "RETRAIN" and action != "PROMOTED" else "OK",
         "choice": choice,
         "action": action,
     }
+
+
+def rollback(project_id: str) -> Dict[str, Any]:
+    """Restore the project's previous model and bundle."""
+    return retrain_mod.rollback_project(project_id)

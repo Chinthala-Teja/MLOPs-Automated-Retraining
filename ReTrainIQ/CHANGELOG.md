@@ -25,6 +25,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **.gitattributes**: `* text=auto eol=lf` for consistent line endings.
 - **.env.example**: Template for `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`.
 - **requirements-dev.txt**: Pins `ruff==0.9.10` for static analysis.
+- **Stage 3 retraining**: Added worker-isolated candidate training, paired V-slice and reference-holdout verification, atomic promotion and rollback, version bundles, labelled-history refresh, and three-batch shadow checks.
+- **Orchestrator and CLI**: Routed automatic, late-label, and human retrains through one cycle; added rollback and version-list commands.
+- **Store**: Added ordered batch/version retrieval, label-count updates, and previous/active version status handling.
 - **docs/ARCHITECTURE.md**: Data-flow diagram, decision-score formula, Contract v2 explanation.
 - **docs/STATUS.md**: Per-stage tracker and evidence table (real vs stub).
 - **CHANGELOG.md**: This file.
@@ -36,6 +39,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Validation
 - **2026-11-12** V0 audit: local `pytest -q` — 37 passed; `ruff check .` — clean; `python tools/status.py` — all contract signatures verified; fresh Python 3.10 clone — setup/demo generation succeeded and 37 tests passed.
+- **2026-11-12** Stage 3: `pytest -q` — 50 passed in 131.44s; `ruff check .` — clean; `python tools/status.py` — all contract signatures verified.
 
 ---
 
