@@ -349,70 +349,73 @@ def _verify_worker(
         champion, holdout_df, profile, metric_name
     )
 
+    # Gain is measured on 0-1 loss (accuracy): CARA-T staleness, which triggers
+    # retraining, is loss-based, and a single metric such as recall can be raised
+    # by a worse model that simply predicts the positive class more often.
+    candidate_correct = (candidate_predictions == truth).astype(float)
+    champion_correct = (champion_predictions == truth).astype(float)
+    paired = candidate_correct - champion_correct
     rng = np.random.default_rng(seed)
-    gains: List[float] = []
-    for _ in range(n_boot):
-        indices = rng.integers(0, len(truth), size=len(truth))
-        sample_truth = truth[indices]
-        if metric_name == "roc_auc" and len(np.unique(sample_truth)) < 2:
-            continue
-        candidate_sample = _score_predictions(
-            sample_truth,
-            candidate_predictions[indices],
-            candidate_scores[indices] if candidate_scores is not None else None,
-            metric_name,
-            profile,
-            list(getattr(candidate, "classes_", [])),
-        )
-        champion_sample = _score_predictions(
-            sample_truth,
-            champion_predictions[indices],
-            champion_scores[indices] if champion_scores is not None else None,
-            metric_name,
-            profile,
-            list(getattr(champion, "classes_", [])),
-        )
-        gains.append(candidate_sample - champion_sample)
-    if not gains:
-        raise ValueError("No valid bootstrap samples were available for verification.")
-
-    gain = candidate_v - champion_v
+    n_rows = len(truth)
+    gains = [float(paired[rng.integers(0, n_rows, size=n_rows)].mean()) for _ in range(n_boot)]
+    gain = float(paired.mean())
     gain_lb = float(np.percentile(gains, 5))
+    primary_drop = float(champion_v - candidate_v)
+
+    candidate_holdout_acc = float(np.mean(
+        np.asarray(candidate.predict(_labelled_rows(holdout_df, profile)[0]))
+        == _labelled_rows(holdout_df, profile)[1].to_numpy()
+    ))
+    champion_holdout_acc = float(np.mean(
+        np.asarray(champion.predict(_labelled_rows(holdout_df, profile)[0]))
+        == _labelled_rows(holdout_df, profile)[1].to_numpy()
+    ))
     holdout_drop = champion_holdout - candidate_holdout
+    holdout_acc_drop = champion_holdout_acc - candidate_holdout_acc
+    # The reference holdout only guards against regressions while it still
+    # describes current data. If the champion itself is clearly worse on the
+    # newest slice than on the holdout, the holdout is out of date and the gate
+    # is waived (otherwise no model could ever be promoted after a concept shift).
+    champion_v_acc = float(champion_correct.mean())
+    se = math.sqrt(max(champion_holdout_acc * (1.0 - champion_holdout_acc), 1e-12) / max(n_rows, 1))
+    holdout_gate = "waived" if (champion_holdout_acc - champion_v_acc) > max(tol, 3.0 * se) else "applied"
+
     recall_drop = 0.0
     if profile.get("task", {}).get("subtype") == "binary":
+        positive = profile.get("task", {}).get("positive_class", 1)
         recall_drop = float(
-            metrics.recall_score(
-                truth,
-                champion_predictions,
-                pos_label=profile.get("task", {}).get("positive_class", 1),
-                zero_division=0,
-            )
-            - metrics.recall_score(
-                truth,
-                candidate_predictions,
-                pos_label=profile.get("task", {}).get("positive_class", 1),
-                zero_division=0,
-            )
+            metrics.recall_score(truth, champion_predictions, pos_label=positive, zero_division=0)
+            - metrics.recall_score(truth, candidate_predictions, pos_label=positive, zero_division=0)
         )
 
     if gain_lb < margin:
         reasons.append(f"verification gain lower bound {gain_lb:.6f} is below {margin:.6f}")
-    if holdout_drop > tol:
-        reasons.append(f"holdout drop {holdout_drop:.6f} exceeds tolerance {tol:.6f}")
-    if recall_drop > recall_guard:
-        reasons.append(
-            f"positive-class recall drop {recall_drop:.6f} exceeds guard {recall_guard:.6f}"
-        )
+    if holdout_gate == "applied":
+        if primary_drop > tol:
+            reasons.append(f"{metric_name} drop on the newest slice {primary_drop:.6f} exceeds tolerance {tol:.6f}")
+        if max(holdout_drop, holdout_acc_drop) > tol:
+            reasons.append(
+                f"holdout drop {max(holdout_drop, holdout_acc_drop):.6f} exceeds tolerance {tol:.6f}"
+            )
+        if recall_drop > recall_guard:
+            reasons.append(
+                f"positive-class recall drop {recall_drop:.6f} exceeds guard {recall_guard:.6f}"
+            )
     return {
         "status": "OK",
         "verified": not reasons,
-        "gain": float(gain),
+        "gain": gain,
         "gain_lb": gain_lb,
+        "gain_metric": "accuracy",
         "holdout_drop": float(holdout_drop),
+        "holdout_acc_drop": float(holdout_acc_drop),
+        "holdout_gate": holdout_gate,
+        "primary_drop": primary_drop,
         "recall_drop": recall_drop,
         "candidate_v": float(candidate_v),
         "champion_v": float(champion_v),
+        "candidate_v_accuracy": float(candidate_correct.mean()),
+        "champion_v_accuracy": champion_v_acc,
         "reasons": reasons,
     }
 
@@ -515,6 +518,13 @@ def load_bundle(project_id: str, version: str) -> Dict[str, Any]:
     active_path = project_dir / "models" / "active" / "model.joblib"
     _atomic_copy(model_path, active_path)
     return {"status": "OK", "version": version, "active_path": str(active_path)}
+
+
+def current_holdout_path(project_id: str, profile: Dict[str, Any]) -> Optional[str]:
+    """Holdout that goes with the active version (the profile's holdout unless it was retired)."""
+    state = _read_state(project_id)
+    mapped = state.get("holdout_by_version", {}).get(state.get("active_version"))
+    return mapped or profile.get("data", {}).get("holdout_path")
 
 
 def _read_profile(project_id: str) -> Dict[str, Any]:
@@ -631,7 +641,7 @@ def run_retrain_cycle(
     )
     seconds = float(train_result["seconds"])
 
-    holdout_path = profile.get("data", {}).get("holdout_path")
+    holdout_path = current_holdout_path(project_id, profile)
     if not holdout_path:
         raise ValueError("Retraining verification requires a reference holdout path.")
     holdout_df = _read_frame(holdout_path)
@@ -669,6 +679,10 @@ def run_retrain_cycle(
             "seconds": seconds,
         }
 
+    # If the holdout gate was waived the old holdout no longer describes current
+    # data: retire it for this version and use the verification slice instead.
+    holdout_retired = verification.get("holdout_gate") == "waived"
+    baseline_df = data_result["v_df"] if holdout_retired else holdout_df
     history_batches = _labelled_batches(project_id)
     requested_history = int(profile.get("offline_batches_N", 25))
     warnings: List[str] = []
@@ -683,7 +697,7 @@ def run_retrain_cycle(
                 "model_path": str(candidate_path),
                 "history_df": history_df,
                 "profile": profile,
-                "cfg": {},
+                "cfg": {"holdout_df": baseline_df},
             },
         )
     else:
@@ -702,7 +716,7 @@ def run_retrain_cycle(
         "ri_metrics.metrics:compute_baseline",
         {
             "model_path": str(candidate_path),
-            "holdout_df": holdout_df,
+            "holdout_df": baseline_df,
             "profile": profile,
             "plan": plan,
         },
@@ -729,6 +743,15 @@ def run_retrain_cycle(
 
     state = _read_state(project_id)
     previous_version = active_record["version"] if active_record else None
+    holdout_map = dict(state.get("holdout_by_version", {}))
+    if holdout_retired:
+        new_holdout = project_dir / "data" / f"holdout_{version}.csv"
+        data_result["v_df"].to_csv(new_holdout, index=False)
+        holdout_map[version] = str(new_holdout.resolve().relative_to(ROOT.resolve())).replace("\\", "/")
+        warnings.append("Reference holdout retired (out of date); the verification slice is the new baseline.")
+    elif previous_version in holdout_map:
+        holdout_map[version] = holdout_map[previous_version]
+    state["holdout_by_version"] = holdout_map
     state.update(
         {
             "active_version": version,

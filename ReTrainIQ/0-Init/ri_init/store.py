@@ -283,3 +283,49 @@ def get_active_version(project_id: str, db_path: Optional[Path] = None) -> Optio
     if row:
         return dict(row)
     return None
+
+
+def get_decisions(project_id: str, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """All decisions of a project (joined through its reports), oldest first."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        "SELECT d.* FROM decisions d JOIN reports r ON r.id = d.report_id "
+        "WHERE r.project_id = ? ORDER BY d.id ASC",
+        (project_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_llm_log(model: str, system: str, user: str, response: str, db_path: Optional[Path] = None) -> int:
+    """Record one LLM call (model, prompt and response) for auditing."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS llm_log (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT, "
+            "system TEXT, user TEXT, response TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        cursor = conn.execute(
+            "INSERT INTO llm_log (model, system, user, response) VALUES (?, ?, ?, ?)",
+            (model, system, user, response),
+        )
+        log_id = cursor.lastrowid
+    conn.close()
+    return int(log_id)
+
+
+def delete_project(project_id: str, db_path: Optional[Path] = None) -> None:
+    """Remove every stored row of a project (used by reset and demo mode)."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            "DELETE FROM decisions WHERE report_id IN (SELECT id FROM reports WHERE project_id = ?)",
+            (project_id,),
+        )
+        conn.execute("DELETE FROM decisions WHERE report_id IS NULL")
+        for table in ("reports", "batches", "model_versions"):
+            conn.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    conn.close()

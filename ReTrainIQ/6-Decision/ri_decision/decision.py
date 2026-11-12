@@ -70,6 +70,10 @@ def decide(
 
     if cara_status in ("OK", "STUB") and cara_basis == "measured":
         staleness = float(cara.get("staleness", 0.0))
+        # Act on the lower confidence bound when Module 3 provides one, so that
+        # sampling noise around tau* cannot trigger an automatic retrain.
+        if config.get("use_staleness_lcb", True) and cara.get("staleness_lo") is not None:
+            staleness = float(cara["staleness_lo"])
         tau_star = float(cara.get("tau_star", 0.0))
         s = float(cara.get("s", 0.0))
         denom = max(s, s_floor)

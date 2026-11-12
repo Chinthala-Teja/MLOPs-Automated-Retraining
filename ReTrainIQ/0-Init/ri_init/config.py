@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any, Dict
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT / "workspace"
@@ -17,3 +19,13 @@ DEFAULT_CONFIG = {
     "s_floor": 1e-6,
     "auto_rollback": False,
 }
+
+
+def load_config(project_id: str | None = None) -> Dict[str, Any]:
+    """DEFAULT_CONFIG overlaid with workspace/<project_id>/config.json (e.g. fitted coefficients)."""
+    cfg: Dict[str, Any] = dict(DEFAULT_CONFIG)
+    if project_id:
+        path = WORKSPACE / project_id / "config.json"
+        if path.is_file():
+            cfg.update(json.loads(path.read_text(encoding="utf-8")))
+    return cfg

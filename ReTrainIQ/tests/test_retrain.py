@@ -118,7 +118,7 @@ def test_qualifying_demo_batch_promotes_v2_and_sets_cooldown(
     assert state["cooldown_left"] == project["profile"]["W"]
 
 
-def test_postshift_candidate_is_rejected_by_reference_holdout(
+def test_postshift_candidate_passes_because_outdated_holdout_is_waived(
     retrain_project: dict[str, object],
 ) -> None:
     project = retrain_project
@@ -143,9 +143,25 @@ def test_postshift_candidate_is_rejected_by_reference_holdout(
         v_df=training["v_df"],
     )
 
-    assert result["verified"] is False
+    # After a concept shift the champion is clearly worse on the newest slice than
+    # on the reference holdout, so the holdout no longer describes current data.
+    # The gate is waived (and reported); the candidate must still win on the slice.
     assert result["holdout_drop"] > 0.02
-    assert any("holdout drop" in reason for reason in result["reasons"])
+    assert result["holdout_gate"] == "waived"
+    assert result["gain_metric"] == "accuracy" and result["gain_lb"] > 0
+    assert result["verified"] is True
+
+    # On a stable batch the holdout still applies.
+    stable = demo_batch(project, "batch_025.csv")
+    stable_result = retrain.verify(
+        candidate_path,
+        project["holdout"],
+        profile,
+        champion_path=profile["model"]["artifact"],
+        v_df=stable.iloc[1600:],
+    )
+    assert stable_result["holdout_gate"] == "applied"
+    assert stable_result["verified"] is False
 
 
 def test_shuffled_labels_rejected_and_training_seconds_recorded(

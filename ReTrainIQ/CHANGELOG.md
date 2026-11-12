@@ -5,7 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased] — Audit & Hardening
+## [Stage 4-6 + Modules 2-4] — 2026-11-12
+
+### Added
+- **Module 2** (`ri_drift`): PSI + KS drift, schema validation, plotly figures, scenario injector (covariate by row resampling, concept by label flips, invalid uploads, held-back labels).
+- **Module 3** (`ri_cara.cara_t`): offline CARA-T calibration (per-batch models, cost matrix, kappa, exhaustive tau* search over plateau midpoints), measured staleness with a bootstrap lower bound, and CARA-T-L, the label-free estimate from calibrated confidence.
+- **Module 4** (`ri_metrics`): vetted registry, bootstrap standard errors, curves, baseline comparison (z_m).
+- **Analysis** (`ri_analysis`): HTTP LLM client (Anthropic or OpenAI-compatible), registry-bound metric plan, number-checked summaries with template fallback, tool-bound chat.
+- **Evaluation**: model-bank replay of Never / Always / Periodic / Markov / CARA-T / score policy / Oracle, sensitivity sweep, out-of-time score calibration, label-delay evaluation of CARA-T-L.
+- **Frontend**: Streamlit app with Setup, Monitor (uploads, late labels, timeline, demo mode), Report (zone, gauge, evidence, what-if, decisions, versions, download) and Chat.
+- **CLI**: `reset`, `resolve`, `evaluate`, `watch` (drop folder checked every 5h / 1d / 1w).
+
+### Fixed (found when the real modules replaced the stubs)
+- **setup_project** calibrated CARA-T on the random 2,000-row sample; it now uses the most recent N x B ordered reference rows.
+- **verify**: the gain was measured on the primary metric only, so a 1,600-row model with higher recall replaced the 50,000-row champion on a stable batch. Gain is now the accuracy gain (CARA-T staleness is loss-based); the primary metric and recall are guards.
+- **verify**: after a concept shift every candidate failed the reference-holdout guard, so no model could ever be promoted. The guard is waived when the champion itself has clearly degraded on the newest slice; the old holdout is then retired for the new version.
+- **decision**: measured staleness sits inside sampling noise of tau* on stable data; the score now uses the 5% bootstrap lower bound of staleness.
+- **orchestrator**: automatic retrain results (verification reasons, version, seconds) were stored on a decision row with no report id; they are now in the report and the decision note.
+
+### Changed
+- `tests/test_contract.py`: the stub test is replaced by "no module is a stub"; `tests/test_retrain.py`: the post-shift test now expects the waived holdout gate; new `tests/test_modules.py` (20 tests).
+
+### Validation
+- **2026-11-12** (cloud session, Linux, Python 3.13.18, scikit-learn 1.7.2): `pytest -q` 68 passed in 413.74s; `ruff check --select E4,E7,E9,F .` clean (ruff 0.16.9; pinned 0.9.10 not run); `python tools/status.py` all signatures verified; demo replay, label-lag replay and `cli evaluate` ran end to end. Not run on Windows or Python 3.10; no real LLM call; UI checked only by a headless render test.
+
+---
+
+## [Audit & Hardening] — 2026-11-12
 
 ### Fixed
 - **worker.py**: Replaced `subprocess.run(timeout=)` with `Popen + communicate(timeout=) + proc.kill()` so the sandbox worker is reliably killed on timeout rather than raising an unhandled exception.

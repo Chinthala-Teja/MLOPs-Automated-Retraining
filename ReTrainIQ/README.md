@@ -1,36 +1,23 @@
 # ReTrainIQ
 
-ReTrainIQ is an adaptive, human-in-the-loop retraining advisor for machine learning systems deployed in production, providing automated data drift detection, CARA-T staleness estimation, holdout performance tracking, and calibrated retraining governance.
+ReTrainIQ is a retraining advisor for a deployed scikit-learn model. It reads an existing ML project,
+watches new data, measures drift, CARA-T staleness and model quality, and turns them into one decision
+score with three zones: KEEP, HUMAN review, or automatic RETRAIN. A retrained candidate replaces the
+current model only after it passes verification, and every promotion can be rolled back.
 
-## The Problem: When to Retrain?
+Python computes every number and the score. The LLM only drafts the project profile, proposes metric
+names from a fixed registry and writes explanations whose numbers are checked against the stored report.
 
-Machine learning models deployed in production inevitably suffer from performance degradation due to covariate shift (changing feature distributions) and concept drift (changing relationships between features and targets). Retraining too frequently incurs high computational cost and risks overfitting to transient noise, while retraining too late leads to degraded real-world performance. In many production settings, ground-truth labels arrive with substantial delays or require costly manual annotation. ReTrainIQ solves this by unifying drift evidence, label-free CARA-T staleness proxy estimation, and verified holdout quality into a unified decision score ($P$) with clear operational zones (`KEEP`, `HUMAN`, `RETRAIN`).
+## Modules
 
-## The Four Modules & Decision Score
+1. **Module 1, understand (`1-Profile`)**: static scan of a GitHub repo or ZIP (never executed), profile draft, code-side verification, model smoke test in a sandbox.
+2. **Module 2, drift (`2-Drift`)**: PSI and KS per feature, drift share `d`, schema validation. A warning only, never a trigger.
+3. **Module 3, CARA-T (`3-CARA`)**: relative staleness from Mahadevan and Mathioudakis (2024) against an offline threshold `tau*`. While labels are pending, **CARA-T-L** estimates staleness from calibrated model confidence; an estimate can never trigger automatic retraining.
+4. **Module 4, quality (`4-Metrics`)**: registry metrics with bootstrap standard errors, compared with a never-seen holdout (`z_m`).
+5. **Decision (`6-Decision`)**: `P = sigmoid(b + a1*zc + a2*zm + a3*d)`; `P >= 0.65` RETRAIN, `P <= 0.35` KEEP, otherwise HUMAN. `P` is a decision score, not a probability (the calibration test on the demo did not support calling it one).
+6. **Analysis (`5-Analysis`)** and **frontend**: summaries, chat, Streamlit dashboard with a demo mode.
 
-1. **Module 1 (Profile - `1-Profile`):** Understands the project structure, extracts contract-compliant system profiles from code repositories or uploads, validates features, schema, and smoke-tests models.
-2. **Module 2 (Drift - `2-Drift`):** Quantifies covariate shift and per-feature drift share ($d$) across numerical and categorical features.
-3. **Module 3 (CARA-T Staleness - `3-CARA`):** Calibrates and tracks active-learning-based staleness ($z_c$), supporting both measured ground truth and label-free confidence-based estimation.
-4. **Module 4 (Metrics & Quality - `4-Metrics`):** Evaluates performance degradation ($z_m$) relative to holdout baselines with bootstrap standard errors.
-5. **Decision Engine (`6-Decision`):** Combines evidence into probability $P = \sigma(b + a_1 z_c + a_2 z_m + a_3 d)$. Classifies batches into:
-   - `KEEP`: Model remains healthy ($P \le 0.35$).
-   - `HUMAN`: Moderate degradation, unlabelled data requiring annotation, or cooldown ($0.35 < P < 0.65$).
-   - `RETRAIN`: Severe measured staleness and degradation requiring candidate retraining ($P \ge 0.65$).
-
-## Folder Map & Module Ownership
-
-| Folder | Package | Owner | Description | Status |
-|---|---|---|---|---|
-| `0-Init/ri_init` | `ri_init` | Teja | Core store, sandbox worker, configuration, demo builder | IMPLEMENTED |
-| `1-Profile/ri_profile` | `ri_profile` | Teja | Repository scanning, schema extraction, profile verification | IMPLEMENTED |
-| `2-Drift/ri_drift` | `ri_drift` | Ramakrishna | Drift calculations, PSI, distribution overlays, scenario injection | STUB |
-| `3-CARA/ri_cara` | `ri_cara` | Udaykiran | CARA-T calibration, online staleness, label-free proxy evaluation | STUB |
-| `4-Metrics/ri_metrics` | `ri_metrics` | Udaykiran | Performance metrics registry, bootstrap comparisons, baseline tracking | STUB |
-| `5-Analysis/ri_analysis` | `ri_analysis` | Teja | LLM client protocols, automated summaries, conversational diagnostics | STUB |
-| `6-Decision/ri_decision` | `ri_decision` | Teja | Decision scoring, verified retraining, rollback, orchestrator, CLI | IMPLEMENTED |
-| `frontend` | `frontend` | Teja | Streamlit interactive dashboard | STUB |
-| `tests` | — | All | Integration and unit test suites | IMPLEMENTED |
-| `workspace` | — | Runtime | Project artifacts, databases, models, reports (git-ignored) | RUNTIME |
+All packages are implemented (`python tools/status.py`). One developer owns everything.
 
 ## Setup Instructions
 
@@ -56,43 +43,40 @@ pytest -q
 python tools/status.py
 ```
 
-## Running the Replay Command
-
-The command-line interface replays incoming data batches through the monitoring and decision loop.
+## Commands
 
 ```bash
-# Setup demo project baseline and calibration:
-python -m ri_decision.cli setup --project demo
-
-# Replay batches with a 2-batch label lag:
-python -m ri_decision.cli replay --project demo --batches workspace/demo/data/stream --limit 10 --label-lag 2
-
-# List registered model versions or restore the previous version:
+python -m ri_decision.cli setup    --project demo          # baseline + CARA-T calibration (about 30 s)
+python -m ri_decision.cli replay   --project demo --batches workspace/demo/data/stream --limit 40
+python -m ri_decision.cli replay   --project demo --batches workspace/demo/data/stream --limit 30 --label-lag 2
+python -m ri_decision.cli evaluate --project demo          # baselines, sensitivity, calibration, CARA-T-L
+python -m ri_decision.cli resolve  --project demo --report 12 --choice KEEP
 python -m ri_decision.cli versions --project demo
 python -m ri_decision.cli rollback --project demo
+python -m ri_decision.cli reset    --project demo          # wipe run state, set up again
+python -m ri_decision.cli watch    --project demo --incoming workspace/demo/incoming --every 5h
+streamlit run frontend/app.py                              # dashboard
 ```
 
-## Component Status Table
+`watch` checks a drop folder on a schedule (`5h`, `1d`, `1w`, or seconds). Data files go through the full
+check; a file named `labels_<batch_id>.csv` is attached to that stored batch. Uploads are accumulated
+until a full batch of `batch_size_B` rows exists, so irregular uploads are fine.
 
-Generated by `python tools/status.py`:
+To use an LLM, copy `.env.example` to `.env` and fill in provider, key and model. Without it the system
+uses a manual / heuristic profile, the default metric plan and template summaries.
 
-| Package | Module | Status | Contract Functions |
-|---|---|---|---|
-| `0-Init` | `ri_init.store` | IMPLEMENTED | `init_db`, `add_project`, `get_project`, `add_batch`, `get_batch`, `get_batches`, `update_batch`, `add_report`, `update_report`, `get_report`, `get_reports`, `add_decision`, `add_version`, `get_versions`, `set_active_version`, `get_active_version` |
-| `0-Init` | `ri_init.worker` | IMPLEMENTED | `run_in_worker` |
-| `1-Profile` | `ri_profile.understand` | IMPLEMENTED | `fetch_repo`, `extract_zip_safe`, `scan_project`, `build_context`, `extract_profile`, `heuristic_profile`, `verify_profile`, `finalize_profile` |
-| `2-Drift` | `ri_drift.drift` | STUB | `run_drift`, `validate_schema`, `fit_reference`, `prediction_shift` |
-| `2-Drift` | `ri_drift.plots` | STUB | `drift_bar`, `distribution_overlay`, `top_drifted` |
-| `2-Drift` | `ri_drift.scenarios` | STUB | `inject_covariate_shift`, `inject_concept_shift`, `make_invalid_upload`, `hold_back_labels`, `build_scenario_stream` |
-| `3-CARA` | `ri_cara.cara_t` | STUB | `calibrate`, `online_staleness`, `estimate_staleness` |
-| `3-CARA` | `ri_cara.replay_baselines` | STUB | `run_baselines` |
-| `3-CARA` | `ri_cara.proxy_eval` | STUB | `run_proxy_eval` |
-| `4-Metrics` | `ri_metrics.metrics` | STUB | `default_plan`, `validate_plan`, `run_metrics`, `compute_baseline`, `compare` |
-| `5-Analysis` | `ri_analysis.summary` | STUB | `summarize`, `validate_summary`, `template_summary` |
-| `5-Analysis` | `ri_analysis.chat` | STUB | `chat` |
-| `6-Decision` | `ri_decision.decision` | IMPLEMENTED | `decide`, `what_if` |
-| `6-Decision` | `ri_decision.retrain` | IMPLEMENTED | `train_candidate`, `build_training_data`, `verify`, `promote`, `rollback`, `save_bundle`, `load_bundle`, `run_retrain_cycle`, `shadow_check`, `rollback_project` |
-| `6-Decision` | `ri_decision.orchestrator` | IMPLEMENTED | `setup_project`, `on_new_data`, `attach_labels`, `resolve_human`, `rollback` |
+## Verify on your machine
+
+```powershell
+pip install -r requirements.txt -r requirements-dev.txt
+python 0-Init/ri_init/setup_env.py
+python -m ri_init.make_demo_project
+pytest -q                      # about 10 minutes: the suite runs several real calibrations
+ruff check .
+python tools/status.py
+python -m ri_decision.cli reset --project demo
+python -m ri_decision.cli replay --project demo --batches workspace/demo/data/stream --limit 30
+```
 
 ## Security Rules
 
@@ -101,12 +85,13 @@ Generated by `python tools/status.py`:
 - **Deterministic Number Origin:** All evidence scores ($d$, $z_c$, $z_m$, $P$) are computed purely in deterministic Python and scikit-learn code, never synthesized by LLMs.
 - **Path Escape Prevention:** `extract_zip_safe` strictly forbids path traversal (`..` escapes), absolute target paths, and archive symlinks.
 
-## Known Limitations
+## Known limitations
 
-- **Simulated Streaming:** Batch replay simulates temporal data streams from disk rather than live message brokers.
-- **Stub Modules Pending:** Drift, CARA-T, and Metrics modules currently return contract-compliant stub values until partner modules are merged.
-- **Model Framework:** Currently optimized for scikit-learn compatible Pipelines.
+- Replays and injected shifts are simulations; nothing here is evidence of real temporal drift.
+- CARA-T is an adaptation of the paper, not an exact reproduction (see the notes at the top of `3-CARA/ri_cara/cara_t.py`).
+- Version 1 supports a scikit-learn Pipeline that accepts raw rows, tabular data, classification first. Retraining verification supports classification metrics only.
+- CARA-T-L cannot see a pure concept shift (the model stays confident while wrong); `cli evaluate` shows this.
+- The sandbox worker has memory and CPU limits on Linux and macOS; on Windows only the timeout applies.
+- Demo results come from one synthetic stream and one seed.
 
-For in-depth architecture details and status tracking, refer to the [docs/](docs/) directory:
-- [Architecture Guide](docs/ARCHITECTURE.md)
-- [Project Status Tracker](docs/STATUS.md)
+More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/STATUS.md](docs/STATUS.md), [CONTRACT.md](CONTRACT.md).

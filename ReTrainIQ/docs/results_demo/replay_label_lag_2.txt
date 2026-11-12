@@ -1,0 +1,66 @@
+
+Replaying 30 batches with label_lag=2...
+
+Batch          Labelled   DriftShare   Staleness    Basis      P        Zone       Action            
+-----------------------------------------------------------------------------------------------------
+batch_000.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+batch_001.csv  False      0.000        67.334       estimated  0.027    HUMAN      pending           
+batch_002.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_000.csv True       0.000        65.087       measured   0.005    KEEP       labels attached err=+1.909
+batch_003.csv  False      0.000        67.634       estimated  0.033    HUMAN      pending           
+  -> batch_001.csv True       0.000        69.838       measured   0.182    KEEP       labels attached err=-2.504
+batch_004.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_002.csv True       0.000        69.052       measured   0.124    KEEP       labels attached err=-2.057
+batch_005.csv  False      0.000        66.442       estimated  0.016    HUMAN      pending           
+  -> batch_003.csv True       0.000        65.759       measured   0.005    KEEP       labels attached err=+1.875
+batch_006.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_004.csv True       0.000        66.031       measured   0.008    KEEP       labels attached err=+0.964
+batch_007.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_005.csv True       0.000        66.785       measured   0.008    KEEP       labels attached err=-0.343
+batch_008.csv  False      0.000        67.363       estimated  0.028    HUMAN      pending           
+  -> batch_006.csv True       0.000        69.276       measured   0.306    KEEP       labels attached err=-2.281
+batch_009.csv  False      0.000        67.324       estimated  0.027    HUMAN      pending           
+  -> batch_007.csv True       0.000        66.019       measured   0.010    KEEP       labels attached err=+0.977
+batch_010.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_008.csv True       0.000        68.168       measured   0.054    KEEP       labels attached err=-0.805
+batch_011.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_009.csv True       0.000        71.022       measured   0.415    HUMAN      labels attached err=-3.697
+batch_012.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_010.csv True       0.000        67.882       measured   0.059    KEEP       labels attached err=-0.886
+batch_013.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_011.csv True       0.000        71.048       measured   0.420    HUMAN      labels attached err=-4.053
+batch_014.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_012.csv True       0.000        70.775       measured   0.352    HUMAN      labels attached err=-3.780
+batch_015.csv  False      0.000        67.634       estimated  0.033    HUMAN      pending           
+  -> batch_013.csv True       0.000        72.126       measured   0.601    HUMAN      labels attached err=-5.130
+batch_016.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_014.csv True       0.000        70.386       measured   0.252    KEEP       labels attached err=-3.391
+batch_017.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_015.csv True       0.000        67.675       measured   0.020    KEEP       labels attached err=-0.041
+batch_018.csv  False      0.000        67.634       estimated  0.033    HUMAN      pending           
+  -> batch_016.csv True       0.000        65.645       measured   0.006    KEEP       labels attached err=+1.351
+batch_019.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_017.csv True       0.000        68.750       measured   0.052    KEEP       labels attached err=-1.755
+batch_020.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_018.csv True       0.000        69.956       measured   0.222    KEEP       labels attached err=-2.323
+batch_021.csv  False      0.000        67.367       estimated  0.028    HUMAN      pending           
+  -> batch_019.csv True       0.000        64.712       measured   0.004    KEEP       labels attached err=+2.284
+batch_022.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_020.csv True       0.000        63.546       measured   0.001    KEEP       labels attached err=+3.449
+batch_023.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_021.csv True       0.000        70.295       measured   0.182    KEEP       labels attached err=-2.928
+batch_024.csv  False      0.000        66.442       estimated  0.016    HUMAN      pending           
+  -> batch_022.csv True       0.000        68.345       measured   0.019    KEEP       labels attached err=-1.349
+batch_025.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_023.csv True       0.000        67.027       measured   0.020    KEEP       labels attached err=-0.032
+batch_026.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_024.csv True       0.000        66.882       measured   0.005    KEEP       labels attached err=-0.439
+batch_027.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_025.csv True       0.000        69.677       measured   0.179    KEEP       labels attached err=-2.681
+batch_028.csv  False      0.000        66.995       estimated  0.022    HUMAN      pending           
+  -> batch_026.csv True       0.000        113.892      measured   0.999    RETRAIN    labels attached err=-46.896
+batch_029.csv  False      0.000        66.513       estimated  0.213    HUMAN      pending           
+  -> batch_027.csv True       0.000        56.827       measured   0.086    KEEP       labels attached err=+10.168
+-----------------------------------------------------------------------------------------------------
+Summary: batches sent: 30, labels attached: 28, human-pending count: 30, errors: 0
+

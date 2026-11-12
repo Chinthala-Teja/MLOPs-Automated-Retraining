@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from ri_init.config import DEFAULT_CONFIG, ROOT, WORKSPACE
+from ri_init.config import DEFAULT_CONFIG, ROOT, WORKSPACE, load_config
 import ri_init.store as store
 from ri_init.worker import run_in_worker
 
@@ -19,6 +20,7 @@ import ri_drift.drift as drift_mod
 import ri_metrics.metrics as metrics_mod
 import ri_decision.decision as decision_mod
 import ri_decision.retrain as retrain_mod
+from ri_analysis.summary import template_summary
 
 IS_STUB = False
 
@@ -161,22 +163,28 @@ def setup_project(profile: Dict[str, Any]) -> Dict[str, Any]:
     with open(baseline_file, "w", encoding="utf-8") as f:
         json.dump(baseline_res, f, indent=2)
 
-    # Calibrate on ordered reference data
+    # Calibrate on the most recent N x B ordered, labelled reference rows
+    # (the random 2,000-row sample is NOT ordered and is far too small for N batches).
+    n_hist = int(profile.get("offline_batches_N", 25)) * max(int(profile.get("batch_size_B", 2000)), 500)
+    history_df = ref_df.tail(n_hist).reset_index(drop=True)
     calib_res = run_in_worker(
         "ri_cara.cara_t:calibrate",
         {
             "model_path": str(_resolve_path(model_art_raw)),
-            "history_df": train_sample_df,
+            "history_df": history_df,
             "profile": profile,
             "cfg": {},
         },
     )
+    if calib_res.get("status") != "OK":
+        issues.append(f"CARA-T calibration status {calib_res.get('status')}: staleness will stay pending.")
+    issues.extend(calib_res.get("warnings", []))
     calib_file = proj_dir / "calib.json"
     with open(calib_file, "w", encoding="utf-8") as f:
-        json.dump(calib_res, f, indent=2)
+        json.dump(calib_res, f)
 
     # Drift reference stats
-    ref_stats = drift_mod.fit_reference(train_sample_df, profile)
+    ref_stats = drift_mod.fit_reference(ref_df, profile)
     ref_stats_file = proj_dir / "reference_stats.json"
     with open(ref_stats_file, "w", encoding="utf-8") as f:
         json.dump(ref_stats, f, indent=2)
@@ -273,12 +281,14 @@ def on_new_data(
             quality_json="{}",
             score_json="{}",
             zone="BLOCKED",
-            summary="Schema validation failed; file rejected.",
+            summary="Schema validation failed; file rejected: "
+            + "; ".join(str(i) for i in (schema_res.get("issues") or schema_res.get("missing_columns", []))),
         )
         store.add_decision(report_id, "BLOCKED", "system", "Schema error")
         return {
             "status": "BLOCKED",
-            "issues": schema_res.get("missing_columns", ["Schema mismatch"]),
+            "issues": schema_res.get("issues") or schema_res.get("missing_columns", ["Schema mismatch"]),
+            "report_id": report_id,
         }
 
     # If labels_path is provided, join labels
@@ -416,7 +426,7 @@ def on_new_data(
             quality_res = {"module": "quality", "status": "PENDING", "z_m": 0.0}
 
         # 3. Decision
-        dec_res = decision_mod.decide(drift_res, cara_res, quality_res)
+        dec_res = decision_mod.decide(drift_res, cara_res, quality_res, load_config(project_id))
 
         # For unlabelled batch, contract specifies:
         # "an unlabelled batch runs drift + estimate_staleness and ends in HUMAN with the alert 'request labels'"
@@ -453,6 +463,12 @@ def on_new_data(
                 trigger="automatic",
             )
             action_recorded = retrain_result["status"]
+            dec_res["retrain"] = {
+                k: retrain_result.get(k) for k in ("status", "version", "seconds", "verify", "reason", "warnings")
+            }
+            verify_info = retrain_result.get("verify") or {}
+            if verify_info.get("reasons"):
+                decision_note = f"{decision_note}; verification: {'; '.join(verify_info['reasons'])}"
             if retrain_result.get("seconds") is not None:
                 decision_note = (
                     f"{decision_note}; training_seconds="
@@ -505,7 +521,10 @@ def on_new_data(
                     )
                     state = _load_state(project_id)
 
-        summary_text = f"Batch {batch_filename}: Zone {zone}. {decision_note}"
+        summary_text = template_summary({
+            "drift": drift_res, "cara": cara_res, "quality": quality_res, "decision": dec_res,
+            "zone": zone, "action": action_recorded, "profile": profile,
+        })
         report_id = store.add_report(
             project_id=project_id,
             batch_id=batch_id,
@@ -660,8 +679,12 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
     proxy_error = (est_staleness - meas_staleness) if est_staleness is not None else None
 
     # Re-evaluate decision
-    dec_res = decision_mod.decide(drift_orig, cara_measured, quality_measured)
+    dec_res = decision_mod.decide(drift_orig, cara_measured, quality_measured, load_config(project_id))
     dec_res["proxy_error"] = proxy_error
+    dec_res["estimated_before_labels"] = {
+        "staleness_est": cara_est.get("staleness_est"),
+        "staleness_est_lo": cara_est.get("staleness_est_lo"),
+    }
     zone = dec_res["zone"]
     decision_note = f"Late labels attached. Re-evaluated zone: {zone}."
     shadow_result = retrain_mod.shadow_check(project_id, batch_df)
@@ -689,6 +712,10 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
             report_id=report_id,
         )
         action = retrain_result["status"]
+        dec_res["retrain"] = {
+            k: retrain_result.get(k) for k in ("status", "version", "seconds", "verify", "reason", "warnings")
+        }
+        store.update_report(report_id, score_json=json.dumps(dec_res))
         if retrain_result.get("reason"):
             decision_note += f" {retrain_result['reason']}"
         else:
@@ -700,7 +727,10 @@ def attach_labels(project_id: str, batch_id: int, labels_path: Path | str) -> Di
             action = "rollback suggested"
         if DEFAULT_CONFIG.get("auto_rollback", False):
             action = "automatic rollback"
-    store.update_report(report_id, summary=decision_note)
+    store.update_report(report_id, summary=decision_note + "\n" + template_summary({
+        "drift": drift_orig, "cara": cara_measured, "quality": quality_measured, "decision": dec_res,
+        "zone": zone, "action": action, "profile": profile,
+    }))
     store.add_decision(
         report_id,
         action,
@@ -769,3 +799,27 @@ def resolve_human(project_id: str, report_id: int, choice: str, force: bool = Fa
 def rollback(project_id: str) -> Dict[str, Any]:
     """Restore the project's previous model and bundle."""
     return retrain_mod.rollback_project(project_id)
+
+
+def reset_project(project_id: str) -> Dict[str, Any]:
+    """Wipe a project's run state (batches, reports, versions after v1) and set it up again."""
+    proj_dir = WORKSPACE / project_id
+    profile_path = proj_dir / "profile.json"
+    if not profile_path.is_file():
+        raise FileNotFoundError(f"Project profile not found for {project_id}")
+    with open(profile_path, "r", encoding="utf-8") as f:
+        profile = json.load(f)
+    store.delete_project(project_id)
+    for name in ("batches", "rejected"):
+        shutil.rmtree(proj_dir / "data" / name, ignore_errors=True)
+    for path in list((proj_dir / "data").glob("holdout_v*.csv")) + list((proj_dir / "data").glob("tmp_*")):
+        path.unlink(missing_ok=True)
+    (proj_dir / "data" / "buffer.csv").unlink(missing_ok=True)
+    (proj_dir / "state.json").unlink(missing_ok=True)
+    models_dir = proj_dir / "models"
+    if models_dir.is_dir():
+        for child in models_dir.iterdir():
+            if child.is_dir() and child.name not in ("v1",):
+                shutil.rmtree(child, ignore_errors=True)
+    profile.setdefault("model", {})["artifact"] = _to_rel_path(models_dir / "v1" / "model.joblib")
+    return setup_project(profile)
