@@ -46,7 +46,7 @@ def main() -> None:
 
         with open(output_file, "wb") as f:
             pickle.dump(result, f)
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc(file=sys.stderr)
         sys.exit(2)

@@ -1,5 +1,5 @@
 """metrics.py stub for ri_metrics"""
-from typing import Any, Dict, List
+from typing import Any, Dict
 import pandas as pd
 
 IS_STUB = True

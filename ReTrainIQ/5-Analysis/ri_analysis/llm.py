@@ -1,7 +1,7 @@
 """llm.py for ri_analysis"""
 from __future__ import annotations
 
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 IS_STUB = True
 

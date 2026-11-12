@@ -1,5 +1,5 @@
 """drift.py stub for ri_drift"""
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 import pandas as pd
 
 IS_STUB = True
