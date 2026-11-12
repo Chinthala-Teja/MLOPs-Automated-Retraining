@@ -10,3 +10,4 @@ def run_proxy_eval(profile: Dict[str, Any], cfg: Dict[str, Any]) -> pd.DataFrame
     return pd.DataFrame([
         {"batch_id": 0, "spearman": 0.85, "mae": 0.02, "status": "STUB"}
     ])
+

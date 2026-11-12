@@ -8,6 +8,8 @@ from ri_init.store import (
     add_batch,
     add_report,
     get_reports,
+    get_report,
+    update_report,
     add_decision,
     add_version,
     set_active_version,
@@ -36,9 +38,18 @@ def test_store_roundtrip(temp_db):
     # 3. Report
     r_id = add_report("p1", b_id, "{}", "{}", "{}", "{}", "KEEP", "All good", db_path=temp_db)
     assert r_id == 1
+    report = get_report(r_id, db_path=temp_db)
+    assert report is not None
+    assert report["zone"] == "KEEP"
+
+    update_report(r_id, db_path=temp_db, zone="HUMAN", summary="Updated summary")
+    report_updated = get_report(r_id, db_path=temp_db)
+    assert report_updated["zone"] == "HUMAN"
+    assert report_updated["summary"] == "Updated summary"
+
     reports = get_reports("p1", db_path=temp_db)
     assert len(reports) == 1
-    assert reports[0]["zone"] == "KEEP"
+    assert reports[0]["zone"] == "HUMAN"
 
     # 4. Decision
     d_id = add_decision(r_id, "KEEP", "system", "Auto keep", db_path=temp_db)
@@ -55,4 +66,3 @@ def test_store_roundtrip(temp_db):
     set_active_version("p1", "v2", db_path=temp_db)
     active2 = get_active_version("p1", db_path=temp_db)
     assert active2["version"] == "v2"
-

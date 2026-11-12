@@ -13,4 +13,6 @@ DEFAULT_CONFIG = {
     "a3": 0.5,
     "retrain_limit": 0.65,
     "keep_limit": 0.35,
+    "z_clip": 3.0,
+    "s_floor": 1e-6,
 }

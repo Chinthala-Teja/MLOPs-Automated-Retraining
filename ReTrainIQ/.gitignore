@@ -1,7 +1,10 @@
 .venv/
 __pycache__/
 *.pyc
-workspace/
-*.egg-info/
 .pytest_cache/
-
+workspace/
+.env
+*.joblib
+*.pkl
+.ruff_cache/
+retrainiq.db

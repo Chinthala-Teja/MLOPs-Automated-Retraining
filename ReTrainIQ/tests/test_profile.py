@@ -165,3 +165,4 @@ def test_finalize_profile_writes_and_stores():
     proj_row = store.get_project("final_test_proj")
     assert proj_row is not None
     assert proj_row["id"] == "final_test_proj"
+

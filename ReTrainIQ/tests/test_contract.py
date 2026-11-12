@@ -132,4 +132,6 @@ def test_contract_stubs():
     dec_est_res = decision_mod.decide(drift_res, cara_est, quality_res, {})
     assert dec_est_res["zone"] in ["KEEP", "HUMAN"]
     assert "estimated from model confidence, labels pending" in dec_est_res["reason"]
-    assert dec_est_res["zc"] == cara_est["staleness_est_lo"]
+    # Verify zc was computed using staleness_est_lo: (0.035 - 0.10) / 0.04 = -1.625
+    expected_zc = (cara_est["staleness_est_lo"] - cara_est["tau_star"]) / cara_est["s"]
+    assert pytest.approx(dec_est_res["zc"], 1e-4) == expected_zc

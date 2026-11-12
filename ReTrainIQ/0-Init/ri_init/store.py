@@ -2,6 +2,8 @@
 SQLite database wrapper for ReTrainIQ.
 DB file default at WORKSPACE / 'retrainiq.db'
 """
+from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -103,6 +105,17 @@ def add_batch(project_id: str, file: str, n_rows: int, n_labelled: int, db_path:
     conn.close()
     return batch_id
 
+def get_batch(batch_id: int, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM batches WHERE id = ?", (batch_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
 def add_report(project_id: str, batch_id: int, drift_json: str, cara_json: str, quality_json: str, score_json: str, zone: str, summary: str, db_path: Optional[Path] = None) -> int:
     init_db(db_path)
     conn = get_connection(db_path)
@@ -115,6 +128,29 @@ def add_report(project_id: str, batch_id: int, drift_json: str, cara_json: str, 
         report_id = cursor.lastrowid
     conn.close()
     return report_id
+
+def update_report(report_id: int, db_path: Optional[Path] = None, **fields: Any) -> None:
+    if not fields:
+        return
+    init_db(db_path)
+    conn = get_connection(db_path)
+    set_clauses = [f"{k} = ?" for k in fields.keys()]
+    values = list(fields.values()) + [report_id]
+    query = f"UPDATE reports SET {', '.join(set_clauses)} WHERE id = ?"
+    with conn:
+        conn.execute(query, values)
+    conn.close()
+
+def get_report(report_id: int, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
 
 def get_reports(project_id: str, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
     init_db(db_path)
