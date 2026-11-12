@@ -31,7 +31,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - **README.md**: Full rewrite — problem statement, module map, setup commands (PowerShell + bash), replay command, component status table, security rules, known limitations.
+- **README.md**: Replaced machine-specific absolute links with repository-relative documentation links.
 - **CONTRACT.md**: Updated to match final signatures including `update_report`, `get_report`, `get_batch`, `estimate_staleness`, Contract v2 fields.
+
+### Validation
+- **2026-11-12** V0 audit: local `pytest -q` — 37 passed; `ruff check .` — clean; `python tools/status.py` — all contract signatures verified; fresh Python 3.10 clone — setup/demo generation succeeded and 37 tests passed.
 
 ---
 
