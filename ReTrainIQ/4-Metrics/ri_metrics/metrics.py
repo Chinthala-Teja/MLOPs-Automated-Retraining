@@ -191,6 +191,10 @@ def run_metrics(model_path: str, df_labelled: pd.DataFrame, profile: Dict[str, A
         labels = sorted(pd.unique(np.concatenate([y, pred])).tolist())
         confusion = skm.confusion_matrix(y, pred, labels=labels).astype(int).tolist()
         labels_out = [v.item() if hasattr(v, "item") else v for v in labels]
+    per_class_recall: Optional[Dict[str, float]] = None
+    if kind == "multiclass":
+        recalls = skm.recall_score(y, pred, labels=labels, average=None, zero_division=0)
+        per_class_recall = {str(label): float(r) for label, r in zip(labels_out or [], recalls)}
     if kind == "binary" and score is not None and len(np.unique(y)) == 2:
         fpr, tpr, _ = skm.roc_curve(y == ctx["positive_class"], score)
         prec, rec, _ = skm.precision_recall_curve(y == ctx["positive_class"], score)
@@ -199,6 +203,7 @@ def run_metrics(model_path: str, df_labelled: pd.DataFrame, profile: Dict[str, A
     return {
         "module": "quality", "status": "OK", "n": int(len(lab)), "label_coverage": coverage,
         "metrics": metrics_out, "curves": curves, "confusion_matrix": confusion, "labels": labels_out,
+        "per_class_recall": per_class_recall,
         "skipped": skipped, "z_m": 0.0, "degraded": False, "table": [],
     }
 

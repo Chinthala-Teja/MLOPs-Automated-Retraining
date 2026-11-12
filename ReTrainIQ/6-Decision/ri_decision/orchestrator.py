@@ -386,6 +386,11 @@ def on_new_data(
 
         # 1. Drift
         drift_res = drift_mod.run_drift(train_sample_df, batch_df, profile)
+        drift_res["schema"] = {
+            "status": schema_res.get("status", "VALID"),
+            "unseen_categories": schema_res.get("unseen_categories", {}),
+            "out_of_range": schema_res.get("out_of_range", {}),
+        }
 
         # 2. CARA & Quality
         if is_labelled:
@@ -466,6 +471,7 @@ def on_new_data(
             dec_res["retrain"] = {
                 k: retrain_result.get(k) for k in ("status", "version", "seconds", "verify", "reason", "warnings")
             }
+            dec_res["retrain"]["trigger"] = "automatic"
             verify_info = retrain_result.get("verify") or {}
             if verify_info.get("reasons"):
                 decision_note = f"{decision_note}; verification: {'; '.join(verify_info['reasons'])}"
@@ -778,6 +784,12 @@ def resolve_human(project_id: str, report_id: int, choice: str, force: bool = Fa
             force=force,
         )
         action = retrain_result["status"]
+        score = json.loads(report.get("score_json") or "{}")
+        score["retrain"] = {
+            k: retrain_result.get(k) for k in ("status", "version", "seconds", "verify", "reason", "warnings")
+        }
+        score["retrain"]["trigger"] = "human"
+        store.update_report(report_id, score_json=json.dumps(score))
         if action == "INSUFFICIENT_DATA":
             store.add_decision(
                 report_id,
