@@ -225,6 +225,4 @@ data, models, per-batch results, plots, and audit summaries are saved under
 
 Some source datasets and archives are local inputs and are excluded by
 `.gitignore`. Restore the appropriate dataset before rerunning a workflow.
-The Electricity and CoverType repositories include saved models and experiment
-outputs; the Airline notebook has its recorded results embedded in the
-notebook and writes generated files to its Kaggle working directory when run.
+The Electricity and CoverType repositories include saved models and experiment outputs; the Airline notebook has its recorded results embedded in the notebook and writes generated files to its Kaggle working directory when run.
