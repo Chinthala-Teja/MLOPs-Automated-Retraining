@@ -4,6 +4,7 @@ Everything here only DISPLAYS values that the backend computed.
 """
 from __future__ import annotations
 
+import html
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -45,6 +46,14 @@ section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {color: #9
 .rq-step b {color: #111827;} .rq-step span {color: #6B7280; font-size: 13px;}
 .rq-sim {background: #FFFBEB; border: 1px solid #FCD34D; color: #92400E; border-radius: 8px; padding: 8px 12px;
          font-size: 13px; font-weight: 600;}
+.rq-loading-label {font-size: 13px; color: #6B7280; margin: 4px 0;}
+.rq-loading-bar {height: 7px; border-radius: 999px; overflow: hidden; background: #E5E7EB; margin: 6px 0 12px;}
+.rq-loading-bar span {display: block; width: 35%; height: 100%; border-radius: inherit; background: #4F46E5;
+                          animation: rq-loading-slide 1.25s ease-in-out infinite;}
+@keyframes rq-loading-slide {from {transform: translateX(-110%);} to {transform: translateX(300%);}}
+@media (prefers-reduced-motion: reduce) {
+  .rq-loading-bar span {width: 100%; opacity: .6; animation: none;}
+}
 .rq-flow {display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch;}
 .rq-flow div {flex: 1; min-width: 150px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px;
               padding: 12px 14px;}
@@ -55,6 +64,15 @@ section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {color: #9
 
 def inject_theme() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
+
+
+def loading_bar(label: str) -> None:
+    safe_label = html.escape(label, quote=True)
+    st.markdown(
+        f"<div class='rq-loading-label'>{safe_label}</div>"
+        f"<div class='rq-loading-bar' role='progressbar' aria-label='{safe_label}'><span></span></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def pill(text: str, tone: str = "info") -> str:

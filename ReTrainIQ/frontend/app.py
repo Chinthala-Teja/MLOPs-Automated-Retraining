@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import csv
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,11 +28,25 @@ import ri_profile.understand as understand  # noqa: E402
 import ui  # noqa: E402
 from ri_analysis.chat import chat as chat_fn  # noqa: E402
 from ri_analysis.chat import default_tools  # noqa: E402
-from ri_analysis.llm import get_client  # noqa: E402
+from ri_analysis.llm import client_from_config, get_client, get_configured_values  # noqa: E402
 from ri_analysis.summary import report_from_row, summarize_with_meta, template_summary  # noqa: E402
 from ri_drift import plots as drift_plots  # noqa: E402
 from ri_init.config import WORKSPACE, load_config  # noqa: E402
 from ri_metrics.metrics import REGISTRY, default_plan  # noqa: E402
+
+
+def read_csv_robust(path: Path) -> pd.DataFrame:
+    """Read CSV files that contain quoted commas or embedded quote characters."""
+    try:
+        return pd.read_csv(path)
+    except (pd.errors.ParserError, UnicodeDecodeError):
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.reader(handle, skipinitialspace=True))
+        if not rows:
+            return pd.DataFrame()
+        headers = [str(value).strip() for value in rows[0]]
+        frame = pd.DataFrame(rows[1:], columns=headers)
+        return frame.apply(lambda column: column.map(lambda value: value.strip() if isinstance(value, str) else value))
 
 PAGES = ["Overview", "Project Setup", "Monitoring", "Analysis & Reports", "Retraining History",
          "AI Assistant", "Documentation"]
@@ -158,6 +173,7 @@ def page_setup(project_id: Optional[str]) -> None:
         ui.simulated_banner("The demo project is synthetic. Results on it say nothing about real data.")
         if st.button("Load / reset the demo project", type="primary"):
             with st.status("Preparing the demo project...", expanded=True) as status:
+                ui.loading_bar("Generating or refreshing the demo model and baseline...")
                 if not (WORKSPACE / "demo" / "profile.json").is_file():
                     st.write("Generating data and training model v1...")
                     from ri_init import make_demo_project
@@ -214,6 +230,7 @@ def analyse_project(new_id: str, url: str, zip_file: Any, model_file: Any, ref_f
     log: List[Dict[str, str]] = []
     scan: Optional[Dict[str, Any]] = None
     with st.status("Module 1 is reading the project...", expanded=True) as status:
+        ui.loading_bar("Scanning files and validating the project...")
         try:
             if url:
                 st.write("Cloning the repository (depth 1)...")
@@ -299,7 +316,7 @@ def profile_editor() -> None:
     st.markdown("#### 3. Review and correct the profile")
     st.caption("Nothing is registered until you confirm. Correct anything Module 1 got wrong.")
     ref = understand._resolve_path(draft["data"]["reference_path"])
-    columns = list((pd.read_parquet(ref) if str(ref).endswith(".parquet") else pd.read_csv(ref, nrows=5)).columns)
+    columns = list((pd.read_parquet(ref) if str(ref).endswith(".parquet") else read_csv_robust(ref).columns))
     task, feats = draft.get("task", {}), draft.get("features", {})
     with st.form("profile_form"):
         problem = st.text_area("Problem statement", draft.get("problem_statement", ""), height=70)
@@ -330,6 +347,7 @@ def profile_editor() -> None:
     draft["features"] = {"numeric": numeric, "categorical": categorical}
     draft["model"]["algorithm"] = algorithm
     with st.status("Registering the project...", expanded=True) as status:
+        ui.loading_bar("Checking the profile, model, baseline, and calibration...")
         st.write("Verifying the confirmed profile...")
         final = understand.finalize_profile(draft)
         for issue in final.get("issues", []):
@@ -382,6 +400,7 @@ def page_monitoring(project_id: str) -> None:
                 path = save_upload(data_file, inbox)
                 lab = save_upload(labels_file, inbox) if labels_file is not None else None
                 with st.status("Checking the batch...", expanded=True) as status:
+                    ui.loading_bar("Running drift, staleness, quality, and decision checks...")
                     st.write("Schema validation, drift (Module 2), staleness (Module 3), quality (Module 4), decision...")
                     result = orch.on_new_data(project_id, path, lab)
                     status.update(label=f"Finished: {result.get('status')}", state="complete")
@@ -399,8 +418,10 @@ def page_monitoring(project_id: str) -> None:
                 if st.button("Attach labels", disabled=late_file is None):
                     rep = next(r for r in waiting if r["report_id"] == pick)
                     path = save_upload(late_file, WORKSPACE / project_id / "data" / "uploads")
-                    with st.spinner("Measuring staleness and quality with the labels..."):
+                    with st.status("Attaching labels...", expanded=True) as status:
+                        ui.loading_bar("Recomputing measured staleness and quality...")
                         res = orch.attach_labels(project_id, rep["batch_id"], path)
+                        status.update(label="Labels attached", state="complete")
                     err = res.get("proxy_error")
                     st.success(f"Labels attached. Zone is now {ui.ZONE_LABEL.get(res['zone'], res['zone'])}."
                                + (f" Estimate minus measured staleness: {err:+.3f}." if err is not None else ""))
@@ -409,7 +430,8 @@ def page_monitoring(project_id: str) -> None:
     with tab_timeline:
         hist = history_frame(load_reports(project_id))
         if len(hist):
-            st.plotly_chart(ui.timeline(hist, cfg), use_container_width=True)
+            st.plotly_chart(ui.timeline(hist, cfg), use_container_width=True,
+                            key=f"monitoring_timeline_{project_id}")
             st.dataframe(hist, use_container_width=True, hide_index=True)
         else:
             st.info("No checks yet.")
@@ -428,6 +450,7 @@ def guided_demo(project_id: str, profile: Dict[str, Any]) -> None:
     if c1.button("Run next step", type="primary", disabled=done):
         index = state["next"]
         with st.status(demo_mod.DEMO_STEPS[index]["title"], expanded=True) as status:
+            ui.loading_bar("Running this guided monitoring step...")
             st.write(demo_mod.DEMO_STEPS[index]["what"])
             state["results"][index] = demo_mod.run_demo_step(project_id, index, profile)
             status.update(state="complete")
@@ -451,7 +474,8 @@ def guided_demo(project_id: str, profile: Dict[str, Any]) -> None:
     reports = load_reports(project_id)
     hist = history_frame(reports)
     if state["results"] and len(hist):
-        st.plotly_chart(ui.timeline(hist, load_config(project_id)), use_container_width=True)
+        st.plotly_chart(ui.timeline(hist, load_config(project_id)), use_container_width=True,
+                        key=f"monitoring_demo_timeline_{project_id}")
     if done:
         st.success("Demo finished. Open Analysis & Reports to walk through any check, or Retraining History for versions.")
 
@@ -499,7 +523,7 @@ def module2_panel(project_id: str, rep: Dict[str, Any], hist: pd.DataFrame) -> N
     batch_path = orch._resolve_path(batch["file"]) if batch else None
     if batch_path and batch_path.is_file() and ref_path.is_file():
         st.markdown("**Top three features: reference versus incoming**")
-        ref_df, new_df = pd.read_csv(ref_path), pd.read_csv(batch_path)
+        ref_df, new_df = read_csv_robust(ref_path), read_csv_robust(batch_path)
         for col, feat in zip(st.columns(3), drift_plots.top_drifted(drift, 3)):
             col.plotly_chart(drift_plots.distribution_overlay(ref_df, new_df, feat["feature"], feat["type"]),
                              use_container_width=True)
@@ -723,8 +747,17 @@ def page_analysis(project_id: str) -> None:
         st.text(st.session_state.get(key, {}).get("text") or template_summary(rep))
         c1, c2 = st.columns([2, 5])
         if c1.button("Write AI summary"):
-            with st.spinner("Asking the LLM and checking its numbers against the report..."):
-                st.session_state[key] = summarize_with_meta(rep)
+            with st.status("Writing AI summary...", expanded=True) as status:
+                ui.loading_bar("Waiting for the AI response and validating its numbers...")
+                ui_settings = st.session_state.get("llm_ui", {})
+                session_llm = client_from_config(
+                    ui_settings.get("provider", ""),
+                    ui_settings.get("api_key", ""),
+                    ui_settings.get("model", ""),
+                    ui_settings.get("base_url", ""),
+                )
+                st.session_state[key] = summarize_with_meta(rep, llm=session_llm)
+                status.update(label="AI summary ready", state="complete")
             st.rerun()
         c2.caption(f"Source: {st.session_state[key]['source']}" if key in st.session_state else
                    "Template summary. The AI summary is used only if every number in it matches the report.")
@@ -733,8 +766,10 @@ def page_analysis(project_id: str) -> None:
             b1, b2, b3 = st.columns([1, 1, 4])
             force = b3.checkbox("Promote even if verification fails")
             if b1.button("Retrain"):
-                with st.spinner("Training a candidate and verifying it..."):
+                with st.status("Training candidate...", expanded=True) as status:
+                    ui.loading_bar("Training and verifying the candidate model...")
                     out = orch.resolve_human(project_id, rid, "RETRAIN", force=force)
+                    status.update(label=f"Retraining finished: {out['action']}", state="complete")
                 st.write(f"Result: **{out['action']}**")
             if b2.button("Keep"):
                 orch.resolve_human(project_id, rid, "KEEP")
@@ -814,11 +849,16 @@ def page_history(project_id: str) -> None:
     if previous:
         st.write(f"Restores **{previous}** together with its calibration, baseline and drift reference.")
         if st.button(f"Roll back to {previous}"):
-            try:
-                out = orch.rollback(project_id)
-                st.success(f"Rolled back. Active version: {out.get('active_version')}")
-            except Exception as exc:
-                st.error(str(exc))
+            with st.status("Rolling back model...", expanded=True) as status:
+                ui.loading_bar("Restoring the previous model and calibration...")
+                try:
+                    out = orch.rollback(project_id)
+                except Exception as exc:
+                    status.update(label="Rollback failed", state="error")
+                    st.error(str(exc))
+                else:
+                    status.update(label="Rollback complete", state="complete")
+                    st.success(f"Rolled back. Active version: {out.get('active_version')}")
     else:
         st.caption("No previous version to roll back to.")
 
@@ -826,7 +866,56 @@ def page_history(project_id: str) -> None:
 # ----------------------------------------------------------------------------- AI Assistant
 def page_assistant(project_id: str) -> None:
     ui.page_title("AI Assistant", "Ask about this project. Answers come only from the stored reports.")
-    llm_on = get_client() is not None
+    ui_settings = st.session_state.setdefault("llm_ui", {})
+    if not ui_settings:
+        ui_settings.update(get_configured_values())
+    if ui_settings.get("provider") == "custom" and "openrouter.ai" in ui_settings.get("base_url", ""):
+        ui_settings["provider"] = "openrouter"
+    if ui_settings.get("provider") == "openai" and str(ui_settings.get("model", "")).startswith("openrouter/"):
+        ui_settings["provider"] = "openrouter"
+    with st.expander("LLM connection", expanded=not get_client() and not ui_settings.get("api_key")):
+        col_provider, col_model = st.columns(2)
+        providers = ["openrouter", "openai", "anthropic", "gemini", "groq", "ollama", "custom"]
+        provider = col_provider.selectbox(
+            "Provider",
+            providers,
+            index=providers.index(
+                ui_settings.get("provider", "openrouter")
+            ),
+        )
+        model = col_model.text_input(
+            "Model",
+            value=ui_settings.get("model", ""),
+            placeholder="gpt-4o-mini / claude-sonnet-4-... / model name",
+        )
+        api_key = st.text_input(
+            "API key",
+            value=ui_settings.get("api_key", ""),
+            type="password",
+            help="Stored only in this browser session and sent only to the selected provider.",
+        )
+        base_url = st.text_input(
+            "Base URL (optional)",
+            value=ui_settings.get("base_url", ""),
+            placeholder="Required for custom OpenAI-compatible providers",
+        )
+        save = st.button("Connect", type="primary")
+        if save:
+            ui_settings.update({"provider": provider, "model": model, "api_key": api_key, "base_url": base_url})
+            candidate = client_from_config(provider, api_key, model, base_url)
+            if candidate is None:
+                st.error("Enter a provider, model and API key (API key is optional for Ollama).")
+            else:
+                st.success("LLM connected for this session.")
+
+    ui_settings = st.session_state.get("llm_ui", {})
+    session_llm = client_from_config(
+        ui_settings.get("provider", ""),
+        ui_settings.get("api_key", ""),
+        ui_settings.get("model", ""),
+        ui_settings.get("base_url", ""),
+    )
+    llm_on = session_llm is not None or get_client() is not None
     st.markdown(ui.pill("LLM CONNECTED", "good") if llm_on else ui.pill("NO LLM — RULE-BASED ANSWERS", "idle"),
                 unsafe_allow_html=True)
     st.caption("Try: “why this decision?”, “which features drifted?”, “show the history”, “what if kappa is 2?”, "
@@ -838,7 +927,13 @@ def page_assistant(project_id: str) -> None:
     question = st.chat_input("Ask about this project")
     if question:
         st.chat_message("user").write(question)
-        res = chat_fn(question, project_id)
+        with st.status("AI Assistant is thinking...", expanded=True) as status:
+            ui.loading_bar("Waiting for the response and checking it against stored reports...")
+            res = chat_fn(question, project_id, llm=session_llm)
+            status.update(
+                label="Response ready" if res["mode"] in ("llm", "rules") else "Response ready (fallback)",
+                state="complete",
+            )
         st.chat_message("assistant").write(res["answer"])
         st.caption(f"mode: {res['mode']} · sources: {', '.join(res.get('sources', []))}")
         log.extend([("user", question), ("assistant", res["answer"])])

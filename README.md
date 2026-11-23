@@ -1,39 +1,91 @@
-# Cost-Aware Model Retraining Experiments
+# ReTrainIQ: Evidence-Based Model Retraining
 
-This repository contains three experiments about **when to retrain an existing
-machine-learning model as new batches of data arrive**:
+This repository contains **ReTrainIQ**, an evidence-based retraining advisor,
+alongside the earlier Electricity, Airlines, and CoverType research experiments.
+The project asks when a deployed model should retrain as new batches arrive:
+retraining too often wastes resources, while retraining too late leaves a stale
+model in use.
 
-1. **Electricity** — a binary price-movement classifier and batch replay.
-2. **Airlines** — a flight-delay CARA-T research notebook with offline threshold
-   selection and online policy comparisons.
-3. **CoverType** — a binary forest-cover classifier porting the batch workflow
-   to the supplied LIBSVM data.
+The final system reads an existing machine-learning project without executing
+its code, gathers evidence about drift, model staleness, and predictive quality,
+and recommends whether to keep the model, request human review, or retrain.
+Candidate models are verified before promotion, and promoted versions can be
+rolled back.
 
-The experiments compare keeping a model, retraining on every batch, periodic
-retraining, and a cost-aware threshold policy. They are research/replay
-workflows, not production deployments. The threshold policy is CARA-T-inspired;
-the implementations are not exact reproductions of the full published method.
+## What has been implemented
+
+- **Project understanding:** registers a scikit-learn model and its data,
+  features, target, and primary metric.
+- **Monitoring evidence:** measures data drift, CARA-T staleness, and model
+  quality for each incoming batch.
+- **Label-delay handling:** estimates staleness while labels are pending; an
+  estimate is advisory and cannot trigger retraining by itself.
+- **Decision and lifecycle:** combines evidence into KEEP, HUMAN, or RETRAIN
+  outcomes; trains and verifies candidates, keeps model versions, and supports
+  rollback.
+- **Interface:** provides a Streamlit dashboard, a guided demonstration, and a
+  command-line workflow. Optional language-model text is checked against
+  deterministic system results.
+- **Verification:** the report records 72 automated tests.
+
+In the report's synthetic-stream replay, ReTrainIQ did not automatically retrain
+during 26 stable batches, then promoted a verified candidate in the first batch
+after an injected concept shift. It had the lowest total cost among the
+deployable strategies compared in that simulation. These results use one
+synthetic stream and one seed; the final system has not yet been evaluated on
+the public datasets used in the earlier experiments.
+
+## Run ReTrainIQ
+
+From the repository root in PowerShell:
+
+```powershell
+Set-Location ReTrainIQ
+if (-not (Test-Path .venv)) { python -m venv .venv }
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r requirements-dev.txt
+python tools/status.py
+ruff check .
+pytest -q
+streamlit run frontend/app.py
+```
+
+To replay and evaluate the built-in demo:
+
+```powershell
+python -m ri_decision.cli reset --project demo
+python -m ri_decision.cli replay --project demo --batches workspace/demo/data/stream --limit 30
+python -m ri_decision.cli evaluate --project demo
+```
+
+See the [ReTrainIQ status](ReTrainIQ/docs/STATUS.md),
+[architecture](ReTrainIQ/docs/ARCHITECTURE.md), and
+[user manual](ReTrainIQ/docs/USER_MANUAL.md) for implementation details.
 
 ## Repository contents
 
 | Path | Purpose |
 |---|---|
-| `Electricity\electricity-cara\` | Electricity training, monitoring, sequential replay, policy comparison, and audit scripts |
-| `Electricity_CARA_T.ipynb` | Notebook report for the Electricity experiment, following the Airline research flow |
-| `AirLine.ipynb` | Executed Airlines research notebook; experiment results and plots are embedded in the notebook |
-| `Covertype\` | CoverType pipeline, scripts, project documentation, and saved results |
-| `Covertype_CARA_T.ipynb` | Notebook report for the CoverType experiment, following the Airline research flow |
-| `Covertype\artifacts\` | CoverType baseline, validation, holdout, monitoring, and audit outputs |
-| `Electricity\electricity-cara\artifacts\` | Electricity models, monitoring outputs, policy results, and holdout audit |
+| `ReTrainIQ\` | Final four-module retraining advisor, CLI, dashboard, tests, and documentation |
+| `Research_Projects\Electricity\electricity-cara\` | Electricity training, monitoring, sequential replay, policy comparison, and audit scripts |
+| `Research_Projects\Electricity_CARA_T.ipynb` | Notebook report for the Electricity experiment |
+| `Research_Projects\AirLines.ipynb` | Executed Airlines research notebook; results and plots are embedded |
+| `Research_Projects\Covertype\` | CoverType pipeline, scripts, project documentation, and saved results |
+| `Research_Projects\Covertype_CARA_T.ipynb` | Notebook report for the CoverType experiment |
+| `Research_Projects\covtype.libsvm.binary.scale.bz2` | Supplied CoverType binary dataset |
+| `Research_Projects\MlOPs_CARA_T.zip` | Archived project source bundle |
 
-More detailed project-specific instructions are in the [Electricity README](Electricity/README.md)
-and [CoverType README](Covertype/README.md).
+More detailed project-specific instructions are in the
+[Electricity README](Research_Projects/Electricity/README.md) and
+[CoverType README](Research_Projects/Covertype/README.md).
 
-The [Electricity notebook](Electricity_CARA_T.ipynb)
-and [CoverType notebook](Covertype_CARA_T.ipynb) read saved artifacts by
-default and provide an explicit switch for rerunning their canonical
-pipelines. Both cite the supplied CARA paper and distinguish its method from
-the project's CARA-T-inspired adaptations.
+The [Electricity notebook](Research_Projects/Electricity_CARA_T.ipynb) and
+[CoverType notebook](Research_Projects/Covertype_CARA_T.ipynb) read saved
+artifacts by default and provide an explicit switch for rerunning their
+canonical pipelines. Open them with `Research_Projects` as the Jupyter working
+directory so their path discovery can locate the sibling project folders. Both
+cite the supplied CARA paper and distinguish its method from the project's
+CARA-T-inspired adaptations.
 
 ## Shared experimental workflow
 
@@ -86,20 +138,21 @@ show substantial retraining reduction relative to always retraining.
 From the repository root in PowerShell:
 
 ```powershell
-python -m pip install -r Electricity\electricity-cara\requirements.txt
-Set-Location Electricity\electricity-cara
+python -m pip install -r Research_Projects\Electricity\electricity-cara\requirements.txt
+Set-Location Research_Projects\Electricity\electricity-cara
 python -u evaluate_test_holdout.py
 python audit_test_holdout.py
 ```
 
 The evaluation writes policy results and audit files under
-`Electricity\electricity-cara\artifacts\cara_t\test_holdout\`. See the
-[Electricity README](Electricity/README.md) for individual scripts and
-interpretation notes.
+`Research_Projects\Electricity\electricity-cara\artifacts\cara_t\test_holdout\`.
+See the [Electricity README](Research_Projects/Electricity/README.md) for
+individual scripts and interpretation notes.
 
 ## 2. Airlines
 
-The Airline experiment is in [`AirLine.ipynb`](AirLine.ipynb). The checked-in
+The Airline experiment is in
+[`AirLines.ipynb`](Research_Projects/AirLines.ipynb). The checked-in
 notebook contains saved outputs from an execution: it validates the input
 batches, checks the scikit-learn version against the saved Model V1 metadata,
 recomputes the baseline holdout metrics, runs the cost sensitivity experiment,
@@ -153,11 +206,11 @@ measured operating costs.
 ## 3. CoverType
 
 CoverType ports the batch/retraining workflow to the supplied
-`covtype.libsvm.binary.scale.bz2` data. This is a binary dataset variant with
-581,012 rows and 54 already-scaled features; labels 1 and 2 are mapped to
-binary targets 0 and 1. It is not the original seven-class task. The source
-contains no timestamps, so the pipeline preserves file order for reproducible
-splits and does not claim verified chronology or temporal drift.
+`Research_Projects\covtype.libsvm.binary.scale.bz2` data. This is a binary
+dataset variant with 581,012 rows and 54 already-scaled features; labels 1 and 2
+are mapped to binary targets 0 and 1. It is not the original seven-class task.
+The source contains no timestamps, so the pipeline preserves file order for
+reproducible splits and does not claim verified chronology or temporal drift.
 
 The split is batches 0–69 for training (406,708 rows), 70–84 for validation
 (87,152 rows), and 85–99 for holdout replay (87,152 rows). Model V1 is a Keras
@@ -182,11 +235,11 @@ definition.
 
 ### Reproduce the CoverType pipeline
 
-The source dataset is expected at the repository root as
-`covtype.libsvm.binary.scale.bz2`. Install the project dependencies, then run
-the pipeline from the repository root:
+The source dataset is stored in `Research_Projects`. Install the project
+dependencies, then run the pipeline from that folder:
 
 ```powershell
+Set-Location Research_Projects
 python -m pip install -r Covertype\requirements.txt
 python Covertype\src\01_inspect_data.py
 python Covertype\src\02_prepare_batches.py
@@ -200,8 +253,9 @@ python Covertype\src\07_audit_results.py
 
 Threshold selection must use validation data, not holdout results. Processed
 data, models, per-batch results, plots, and audit summaries are saved under
-`Covertype\data\processed\` and `Covertype\artifacts\`. More detail is in the
-[CoverType README](Covertype/README.md).
+`Research_Projects\Covertype\data\processed\` and
+`Research_Projects\Covertype\artifacts\`. More detail is in the
+[CoverType README](Research_Projects/Covertype/README.md).
 
 ## Limitations and interpretation
 
@@ -217,9 +271,10 @@ data, models, per-batch results, plots, and audit summaries are saved under
   training.
 - Results come from one recorded run/seed per project and do not establish
   statistical robustness or generality.
-- The repository demonstrates experimental pipelines and sequential
-  evaluation, not continuous ingestion, production serving, candidate-model
-  approval, alerting, or rollback.
+- The Electricity, Airlines, and CoverType folders contain offline research
+  experiments. ReTrainIQ demonstrates monitoring, candidate verification,
+  promotion, and rollback on a synthetic stream; it is not a production
+  deployment and has not yet been evaluated on those public datasets.
 
 ## Data and generated files
 

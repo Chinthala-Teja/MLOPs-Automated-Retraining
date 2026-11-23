@@ -12,6 +12,9 @@ names from a fixed registry and writes explanations whose numbers are checked ag
 
 - A guided Streamlit dashboard: Overview, Project Setup, Monitoring, Analysis & Reports, Retraining History, AI Assistant, Documentation.
 - Module-by-module evidence for every check, a decision score with a what-if panel, and an eleven-step retraining pipeline view.
+- Animated loading indicators for analysis, upload, retraining, AI summaries and AI Assistant responses.
+- The AI Assistant accepts provider/model/API-key settings in the UI or from `.env`, including OpenRouter and other OpenAI-compatible providers.
+- Robust CSV parsing for quoted tweet text, commas and embedded quote characters.
 - A five-step guided demo (stable batches, simulated covariate drift, simulated concept shift, verified promotion, monitoring of the new version).
 - Verified retraining with version bundles and rollback.
 - Staleness estimates while labels are late (CARA-T-L), replaced by measurements when labels arrive.
@@ -108,8 +111,11 @@ streamlit run frontend/app.py                              # dashboard
 check; a file named `labels_<batch_id>.csv` is attached to that stored batch. Uploads are accumulated
 until a full batch of `batch_size_B` rows exists, so irregular uploads are fine.
 
-To use an LLM, copy `.env.example` to `.env` and fill in provider, key and model. Without it the system
-uses a manual / heuristic profile, the default metric plan and template summaries.
+To use an LLM, open **AI Assistant > LLM connection** and enter the provider, model and API key. The connection
+can also be configured by copying `.env.example` to `.env` and filling in provider, key, model and, for custom
+providers, base URL. OpenRouter is supported directly with `LLM_PROVIDER=openrouter`,
+`LLM_BASE_URL=https://openrouter.ai/api/v1`, and an OpenRouter model such as `openrouter/free`.
+Without an LLM, the system uses a manual / heuristic profile, the default metric plan and template summaries.
 
 ## Verify on your machine
 

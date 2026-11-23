@@ -19,17 +19,20 @@ Nothing else leaves the machine: no telemetry, no cloud storage, no hosted datab
 
 | Item | Detail |
 |---|---|
-| Provider | Chosen by you. `anthropic` uses the Anthropic Messages API. Any other value uses an OpenAI-compatible `chat/completions` endpoint (`openai`, `groq`, `gemini`, `ollama`, or your own with `LLM_BASE_URL`). |
+| Provider | Chosen by you or in the AI Assistant connection panel. `anthropic` uses the Anthropic Messages API. OpenRouter and other providers use an OpenAI-compatible `chat/completions` endpoint (`openrouter`, `openai`, `groq`, `gemini`, `ollama`, or a custom provider with `LLM_BASE_URL`). |
 | SDK | None. Plain `requests.post`. No provider SDK is installed. |
 | Authentication | Anthropic: header `x-api-key` plus `anthropic-version: 2023-06-01`. OpenAI-compatible: header `Authorization: Bearer <key>`. |
 | Environment variables | `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, optional `LLM_BASE_URL`. Read from the process environment or from `.env` in the repo root (`.env` is git-ignored). |
+| UI session configuration | The AI Assistant connection panel builds a session-local client from provider, model, API key and optional base URL. The key is password-hidden and kept in Streamlit session state; it is not written to `.env` or source files by the UI. |
+| OpenRouter | Use `LLM_PROVIDER=openrouter`, `LLM_MODEL=<OpenRouter model>`, `LLM_API_KEY=<key>`, and `LLM_BASE_URL=https://openrouter.ai/api/v1`. |
 | Request (Anthropic) | `POST {base}/v1/messages` with `{"model", "max_tokens": 1500, "temperature": 0, "system", "messages": [{"role": "user", "content"}]}` |
 | Request (OpenAI-compatible) | `POST {base}/chat/completions` with `{"model", "temperature": 0, "messages": [system, user]}` |
 | Response used | Anthropic: concatenated `content[].text`. OpenAI-compatible: `choices[0].message.content`. For JSON tasks the first `{...}` block is parsed. |
-| What is sent | File excerpts of the scanned repository (profile draft), or the compact report: aggregated metrics, drift table, staleness numbers. **Dataset rows are never sent.** |
+| What is sent | File excerpts of the scanned repository (profile draft), or the compact report/profile: aggregated metrics, drift table, staleness numbers, model versions and history. **Dataset rows are never sent.** |
 | Error handling | Network errors and HTTP status ≥ 400 raise `LLMError`. Every caller catches it and falls back: heuristic profile, default metric plan, template summary, rule-based chat answer. |
 | Output checks | Summary and chat text are accepted only if every number in them matches a number in the stored report (`validate_summary`); a summary must also end with the engine's own zone. One retry, then the template. |
 | Logging | Model name, prompt and response are written to the `llm_log` table. |
+| Frontend feedback | The AI Assistant and AI summary actions display a Streamlit status plus an animated horizontal loading bar until the response is received and validated. |
 | Cost | Charged by your provider per token. One summary sends roughly 1 to 3 thousand tokens of JSON. No call is made unless you press the button or ask a question. |
 | Status | The request and response shapes follow the providers' published formats, but **no live call was made during development** (no key was available). Test it with your key before the demo. The default base URLs for `gemini` and `groq` should be checked against the providers' current documentation. |
 
@@ -59,7 +62,11 @@ The frontend imports the packages and calls functions directly. There is no REST
 
 ### Module 1: `ri_profile.understand`
 
-`fetch_repo(url, dest)`, `extract_zip_safe(zip_path, dest, max_mb=300, max_files=5000)` (rejects absolute paths, `..`, symlinks), `scan_project(path)` → `{file_tree, readme, requirements, model_files, data_files, scripts_and_notebooks, key_py_snippets}`, `build_context(scan, max_chars=20000)`, `extract_profile(context, llm)`, `heuristic_profile(scan, dataset_path, target)`, `verify_profile(profile)` → list of issues, `finalize_profile(profile, user_edits)`.
+`fetch_repo(url, dest)`, `extract_zip_safe(zip_path, dest, max_mb=300, max_files=5000)` (rejects absolute paths, `..`, symlinks), `scan_project(path)` → `{file_tree, readme, requirements, model_files, data_files, scripts_and_notebooks, key_code_snippets}`, `build_context(scan, max_chars=20000)`, `extract_profile(context, llm)`, `heuristic_profile(scan, dataset_path, target)`, `verify_profile(profile)` → list of issues, `finalize_profile(profile, user_edits)`.
+
+The scanner reads up to 80 source lines from each of up to five `.py` and `.ipynb` files. For notebooks, it includes code-cell source only, not markdown or saved outputs; it does not execute any code. When an LLM is configured, these excerpts are included in the profile-draft context. Without an LLM, the existing heuristic profile is still based on the dataset. Source files do not replace the required serialized trained model artifact.
+
+CSV readers in the frontend use a fallback parser for files whose fields contain commas or embedded quotes. This prevents text-heavy fields such as disaster-tweet text from causing a pandas CSV parser crash in the profile editor or Module 2 distribution panel.
 
 ### Module 2: `ri_drift`
 

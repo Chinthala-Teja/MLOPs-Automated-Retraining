@@ -11,11 +11,13 @@ from ri_init.config import WORKSPACE
 import ri_init.store as store
 from ri_analysis.llm import MockLLM
 from ri_profile.understand import (
+    build_context,
     extract_profile,
     extract_zip_safe,
     fetch_repo,
     finalize_profile,
     heuristic_profile,
+    scan_project,
     verify_profile,
 )
 
@@ -76,6 +78,38 @@ def test_fetch_repo_url_validation():
         with pytest.raises(ValueError) as exc2:
             fetch_repo("https://github.com/user/repo/extra/segment", dest_dir)
         assert "Invalid GitHub" in str(exc2.value)
+
+
+def test_scan_project_reads_python_and_notebook_code_without_executing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "train.py").write_text(
+            "raise RuntimeError('must not execute')\npython_source_marker = True\n",
+            encoding="utf-8",
+        )
+        (root / "analysis.ipynb").write_text(json.dumps({
+            "cells": [
+                {"cell_type": "markdown", "source": ["markdown_marker"]},
+                {
+                    "cell_type": "code",
+                    "source": ["raise RuntimeError('must not execute')\n", "notebook_source_marker = True\n"],
+                    "outputs": [{"output_type": "stream", "text": ["output_marker"]}],
+                },
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }), encoding="utf-8")
+
+        scan = scan_project(root)
+        context = build_context(scan)
+
+        assert set(scan["scripts_and_notebooks"]) == {"train.py", "analysis.ipynb"}
+        assert scan["model_files"] == []
+        assert "python_source_marker" in context
+        assert "notebook_source_marker" in context
+        assert "markdown_marker" not in context
+        assert "output_marker" not in context
 
 
 def test_verify_profile_missing_column_and_missing_model():

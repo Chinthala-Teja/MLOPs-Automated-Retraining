@@ -3,6 +3,6 @@
 __pycache__/
 *.py[cod]
 
-# Local notebooks and source datasets
-/Covertype.zip
-/covtype.libsvm.binary.scale.bz2
+# Local archives and source datasets
+/Research_Projects/Covertype.zip
+/Research_Projects/covtype.libsvm.binary.scale.bz2

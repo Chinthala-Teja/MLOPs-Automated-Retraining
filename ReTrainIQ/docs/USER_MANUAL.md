@@ -67,7 +67,7 @@ Press **Analyse Project**. The list "What Module 1 found" shows each step. Then 
 
 | Button | Effect |
 |---|---|
-| Write AI summary | Asks the LLM for a summary; shown only if all its numbers match the report. Needs a key in `.env`. |
+| Write AI summary | Asks the LLM for a summary; the button shows loading status and an animated bar while waiting. The summary is shown only if all its numbers match the report. |
 | Retrain | Trains and verifies a candidate now. With the tick "Promote even if verification fails" the candidate is promoted regardless. |
 | Keep | Records your decision for this batch only. |
 | Roll back to vN (Retraining History) | Restores the previous model with its calibration and baseline. |
@@ -77,7 +77,7 @@ Press **Analyse Project**. The list "What Module 1 found" shows each step. Then 
 
 - **Overview**: status cards and the timeline of all checks.
 - **Retraining History**: versions, every retraining attempt with its verification numbers, rollback.
-- **AI Assistant**: questions answered from stored reports only.
+- **AI Assistant**: questions answered from the selected project's stored reports and project profile. It can also explain general drift, staleness and retraining concepts. An animated status/bar appears while the provider responds.
 - **Documentation**: these documents and the PNG guides inside the app.
 
 ## 7. When something goes wrong
@@ -94,6 +94,7 @@ Press **Analyse Project**. The list "What Module 1 found" shows each step. Then 
 | Worker failed / timed out | The model could not be loaded or took over 15 minutes. | Check the scikit-learn version matches the one that saved the model. |
 | Could not read the project | Bad URL, private repository or unsafe ZIP. | Use a public `https://github.com/owner/repo` URL or a clean ZIP. |
 | AI summary source: template | No LLM configured, or its text failed the number check. | Set `.env`; otherwise the template is the correct fallback. |
+| CSV parser error on tweet text | Text fields contain commas or embedded quotes. | Re-run the app; the frontend automatically retries with its robust quoted-CSV parser. |
 
 ## 8. Command line
 

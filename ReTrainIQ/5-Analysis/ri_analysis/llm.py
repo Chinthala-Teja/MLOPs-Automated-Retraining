@@ -25,6 +25,7 @@ IS_STUB = False
 # documentation before relying on one; override with LLM_BASE_URL if it moved.
 OPENAI_COMPATIBLE = {
     "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "ollama": "http://localhost:11434/v1",
@@ -146,6 +147,27 @@ def get_client() -> Optional[LLMClient]:
     if not provider or not model or (not key and provider.lower() != "ollama"):
         return None
     return HTTPLLM(provider, key or "ollama", model, env.get("LLM_BASE_URL") or None)
+
+
+def get_configured_values() -> Dict[str, str]:
+    """Return non-secret-safe configuration values for pre-filling the Streamlit connection panel."""
+    env = {**_read_dotenv(), **{k: v for k, v in os.environ.items() if k.startswith("LLM_")}}
+    return {
+        "provider": env.get("LLM_PROVIDER", "").strip(),
+        "model": env.get("LLM_MODEL", "").strip(),
+        "api_key": env.get("LLM_API_KEY", "").strip(),
+        "base_url": env.get("LLM_BASE_URL", "").strip(),
+    }
+
+
+def client_from_config(provider: str, api_key: str, model: str, base_url: str = "") -> Optional[LLMClient]:
+    """Build a configured client for a UI session without changing process-wide environment variables."""
+    provider = provider.strip().lower()
+    model = model.strip()
+    api_key = api_key.strip()
+    if not provider or not model or (not api_key and provider != "ollama"):
+        return None
+    return HTTPLLM(provider, api_key or "ollama", model, base_url.strip() or None)
 
 
 def propose_metric_plan(profile: Dict[str, Any], llm: Optional[LLMClient]) -> List[str]:

@@ -182,7 +182,7 @@ def scan_project(path: str | Path) -> Dict[str, Any]:
     model_files: List[str] = []
     data_files: List[str] = []
     scripts_and_notebooks: List[str] = []
-    py_files: List[Path] = []
+    source_files: List[Path] = []
 
     model_exts = {".joblib", ".pkl", ".keras", ".h5", ".onnx"}
     data_exts = {".csv", ".parquet"}
@@ -210,8 +210,7 @@ def scan_project(path: str | Path) -> Dict[str, Any]:
                 data_files.append(file_rel)
             if ext in code_exts:
                 scripts_and_notebooks.append(file_rel)
-            if ext == ".py":
-                py_files.append(file_p)
+                source_files.append(file_p)
 
     # README text
     readme_text = ""
@@ -235,23 +234,37 @@ def scan_project(path: str | Path) -> Dict[str, Any]:
             except Exception:
                 pass
 
-    # Up to 5 key .py files, first 80 lines each
-    key_py_snippets: Dict[str, str] = {}
-    # Prioritize train/model/pipeline files if any
-    py_files_sorted = sorted(
-        py_files,
+    # Up to 5 key source files, first 80 code lines each
+    key_code_snippets: Dict[str, str] = {}
+    source_files_sorted = sorted(
+        source_files,
         key=lambda p: (
             0 if any(k in p.name.lower() for k in ["train", "model", "pipeline", "main", "predict"]) else 1,
+            0 if p.suffix.lower() == ".ipynb" else 1,
             p.name,
         ),
     )
-    for py_p in py_files_sorted[:5]:
-        rel_name = py_p.relative_to(root_p).as_posix()
-        try:
-            lines = py_p.read_text(encoding="utf-8", errors="replace").splitlines()[:80]
-            key_py_snippets[rel_name] = "\n".join(lines)
-        except Exception:
-            pass
+    for source_path in source_files_sorted[:5]:
+        rel_name = source_path.relative_to(root_p).as_posix()
+        if source_path.suffix.lower() == ".ipynb":
+            notebook = json.loads(source_path.read_text(encoding="utf-8"))
+            if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
+                raise ValueError(f"Invalid Jupyter notebook structure: {rel_name}")
+            lines: List[str] = []
+            for cell_index, cell in enumerate(notebook["cells"], start=1):
+                if not isinstance(cell, dict) or cell.get("cell_type") != "code":
+                    continue
+                source = cell.get("source", "")
+                if isinstance(source, list):
+                    source = "".join(part for part in source if isinstance(part, str))
+                if isinstance(source, str) and source.strip():
+                    lines.extend([f"# Cell {cell_index}", *source.splitlines()])
+            excerpt = "\n".join(lines[:80])
+        else:
+            excerpt = "\n".join(
+                source_path.read_text(encoding="utf-8", errors="replace").splitlines()[:80]
+            )
+        key_code_snippets[rel_name] = excerpt
 
     return {
         "root": str(root_p),
@@ -261,7 +274,7 @@ def scan_project(path: str | Path) -> Dict[str, Any]:
         "model_files": model_files,
         "data_files": data_files,
         "scripts_and_notebooks": scripts_and_notebooks,
-        "key_py_snippets": key_py_snippets,
+        "key_code_snippets": key_code_snippets,
     }
 
 
@@ -279,6 +292,11 @@ def build_context(scan: Dict[str, Any], max_chars: int = 20000) -> str:
         sections.append("\n### Data Files Found")
         sections.append("\n".join(scan.get("data_files", [])))
 
+    if scan.get("key_code_snippets"):
+        sections.append("\n### Python and Notebook Source Excerpts (read as text; not executed)")
+        for f, code in scan["key_code_snippets"].items():
+            sections.append(f"--- File: {f} ---\n{code}\n")
+
     if scan.get("readme"):
         sections.append("\n### README (excerpt)")
         sections.append(scan["readme"])
@@ -286,11 +304,6 @@ def build_context(scan: Dict[str, Any], max_chars: int = 20000) -> str:
     if scan.get("requirements"):
         sections.append("\n### Requirements")
         sections.append(scan["requirements"])
-
-    if scan.get("key_py_snippets"):
-        sections.append("\n### Python Source Excerpts")
-        for f, code in scan["key_py_snippets"].items():
-            sections.append(f"--- File: {f} ---\n{code}\n")
 
     context = "\n\n".join(sections)
     if len(context) > max_chars:
